@@ -10,7 +10,7 @@ See **[WRITEUP.md](WRITEUP.md)** for the approach, how confidence is computed, a
 ```bash
 uv sync
 cp .env.example .env            # add ANTHROPIC_API_KEY
-uv run python scripts/gen_dataset.py                      # renders the 10 sample docs (PDFs are generated, not committed)
+uv run python scripts/gen_dataset.py                      # generates data/samples + data/truth (not committed)
 uv run co-extract extract data/samples/03_credit.pdf      # JSON to stdout
 uv run co-extract extract data/samples -o out/            # a whole folder
 uv run co-extract eval                                    # accuracy + calibration -> reports/eval.md
