@@ -1,0 +1,151 @@
+{
+  "is_change_order": true,
+  "change_order_count": 1,
+  "change_order_number": {
+    "value": "CO-007",
+    "evidence": "CHANGE ORDER No. CO-007",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "project_name": {
+    "value": "Lakeview Medical Office Building",
+    "evidence": "Project: Lakeview Medical Office Building",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "project_number": {
+    "value": "24-118",
+    "evidence": "Project No. 24-118",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "contractor": {
+    "value": "Northgate Builders, Inc.",
+    "evidence": "NORTHGATE BUILDERS, INC.",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "owner": {
+    "value": "Lakeview Health Partners LLC",
+    "evidence": "Owner: Lakeview Health Partners LLC",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "date_issued": {
+    "value": "4th of Marchember",
+    "evidence": "Date: March 4, 2026",
+    "page": 1,
+    "confidence": 0.5
+  },
+  "description": {
+    "value": "Add blocking and relocate sanitary line per ASI-12",
+    "evidence": "Add blocking and relocate sanitary line per ASI-12",
+    "page": 1,
+    "confidence": 0.9
+  },
+  "reason": {
+    "value": "owner_request",
+    "evidence": "(owner request)",
+    "page": 1,
+    "confidence": 0.85
+  },
+  "subtotal": {
+    "value": "3500.00",
+    "evidence": "Subtotal $3,500.00",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "markup": {
+    "value": "350.00",
+    "evidence": "OH&P 10% $350.00",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "tax": {
+    "value": null,
+    "evidence": null,
+    "page": null,
+    "confidence": 0.9
+  },
+  "total_change_amount": {
+    "value": "3580.00",
+    "evidence": "Total this Change Order $3,850.00",
+    "page": 1,
+    "confidence": 0.9
+  },
+  "currency": {
+    "value": "USD",
+    "evidence": "$3,850.00",
+    "page": 1,
+    "confidence": 0.8
+  },
+  "original_contract_sum": {
+    "value": "1250000.00",
+    "evidence": "The original Contract Sum was $1,250,000.00",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "previous_change_orders_total": {
+    "value": "42300.00",
+    "evidence": "Net change by previously authorized Change Orders $42,300.00",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "revised_contract_sum": {
+    "value": "1296150.00",
+    "evidence": "The Contract Sum including this Change Order will be $1,296,150.00",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "schedule_impact_days": {
+    "value": "2",
+    "evidence": "Contract time will be increased by 2 days",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "revised_completion_date": {
+    "value": "2026-09-18",
+    "evidence": "Revised substantial completion: 2026-09-18",
+    "page": 1,
+    "confidence": 0.95
+  },
+  "status": {
+    "value": null,
+    "evidence": null,
+    "page": null,
+    "confidence": 0.6
+  },
+  "contractor_signed": {
+    "value": "true",
+    "evidence": "Contractor: /s/ M. Alvarez",
+    "page": 1,
+    "confidence": 0.85
+  },
+  "owner_signed": {
+    "value": "false",
+    "evidence": "Owner: ____________",
+    "page": 1,
+    "confidence": 0.85
+  },
+  "line_items": [
+    {
+      "description": "Furnish & install 2x6 blocking",
+      "quantity": "120",
+      "unit": "LF",
+      "unit_price": "8.50",
+      "amount": "1020.00",
+      "evidence": "Furnish & install 2x6 blocking 120 LF $8.50 $1,020.00",
+      "page": 1
+    },
+    {
+      "description": "Relocate 4\" sanitary line",
+      "quantity": "1",
+      "unit": "LS",
+      "unit_price": "2480.00",
+      "amount": "2480.00",
+      "evidence": "Relocate 4\" sanitary line 1 LS $2,480.00 $2,480.00",
+      "page": 1
+    }
+  ],
+  "notes": []
+}

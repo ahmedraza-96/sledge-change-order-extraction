@@ -1,0 +1,25 @@
+NORTHGATE BUILDERS, INC.
+1200 Harbor Way, Oakland, CA 94607
+
+CHANGE ORDER No. CO-007
+Project: Lakeview Medical Office Building      Project No. 24-118
+Owner: Lakeview Health Partners LLC
+Date: March 4, 2026
+
+Description: Add blocking and relocate sanitary line per ASI-12 (owner request).
+
+  Item                                   Qty  Unit  Unit Price     Amount
+  Furnish & install 2x6 blocking         120  LF        $8.50   $1,020.00
+  Relocate 4" sanitary line                1  LS    $2,480.00   $2,480.00
+
+  Subtotal                                                       $3,500.00
+  OH&P 10%                                                         $350.00
+  Total this Change Order                                        $3,850.00
+
+The original Contract Sum was                                $1,250,000.00
+Net change by previously authorized Change Orders               $42,300.00
+The Contract Sum including this Change Order will be         $1,296,150.00
+
+Contract time will be increased by 2 days. Revised substantial completion: 2026-09-18.
+
+Contractor: /s/ M. Alvarez   Owner: ____________
