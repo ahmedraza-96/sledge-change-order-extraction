@@ -1,0 +1,34 @@
+[project]
+name = "co-extract"
+version = "0.1.0"
+description = "Change-order extraction pipeline: messy PDFs/text -> validated JSON with confidence scores"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=2.1.0",
+    "pdfplumber>=0.11.10",
+    "pillow>=13.0.0",
+    "pydantic>=2.14.1",
+    "pymupdf>=2.0",
+    "python-dotenv>=1.2.4",
+    "rapidfuzz>=3.14.6",
+    "reportlab>=5.0.1",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+co-extract = "co_extract.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: calls the real Claude API (needs credentials)"]
+addopts = "-m 'not live'"
