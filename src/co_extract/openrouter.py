@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import base64
 import os
+import re
+import time
+from collections.abc import Callable
 
 import openai
 import pymupdf
@@ -33,7 +36,7 @@ from .extract import (
     wants_pdf,
 )
 from .ingest import Document
-from .schema import Issue, RawExtraction
+from .schema import FIELD_SPECS, Issue, RawExtraction
 
 BASE_URL = "https://openrouter.ai/api/v1"
 # Chosen from the free models that accept images *and* enforce a JSON schema.
@@ -80,19 +83,30 @@ class OpenRouterExtractor:
         self.fallbacks = [m for m in fallbacks if m != model]
         self.send_pdf = send_pdf
 
-    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None) -> LLMResult:
+    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None,
+                progress: Callable[..., None] | None = None) -> LLMResult:
+        # Streamed so a caller can show real progress: the model's reasoning arrives first,
+        # then the JSON, whose field keys we count as they appear.
+        tracker = _Progress(progress)
         try:
-            resp = self.client.chat.completions.parse(
+            with self.client.chat.completions.stream(
                 model=self.model,
                 messages=build_messages(doc, self.send_pdf, repair),
                 response_format=RawExtraction,
                 max_tokens=MAX_OUTPUT_TOKENS,
+                stream_options={"include_usage": True},
                 extra_body={
                     "models": [self.model, *self.fallbacks],
                     # Only route to providers that honour the JSON schema, never one that ignores it.
                     "provider": {"require_parameters": True},
                 },
-            )
+            ) as stream:
+                for event in stream:
+                    if event.type == "chunk" and event.chunk.choices:
+                        tracker.thinking(getattr(event.chunk.choices[0].delta, "reasoning", None))
+                    elif event.type == "content.delta":
+                        tracker.writing(event.snapshot)
+                resp = stream.get_final_completion()
         except openai.RateLimitError as e:
             raise ExtractionError(f"rate limited (free models: 20/min, 50/day without credits): {e.message}") from e
         except openai.APIStatusError as e:
@@ -104,6 +118,9 @@ class OpenRouterExtractor:
             raise ExtractionError(f"API error {e.status_code}: {e.message}{hint}") from e
         except openai.APIConnectionError as e:
             raise ExtractionError(f"connection error: {e}") from e
+        except openai.APIError as e:
+            # An error OpenRouter sends inside an already-open stream (e.g. the upstream model failed).
+            raise ExtractionError(f"API error during the response: {e.message}") from e
         # The SDK raises these while parsing, before the response reaches us.
         except openai.LengthFinishReasonError as e:
             raise ExtractionError("output truncated at max_tokens") from e
@@ -129,6 +146,40 @@ class OpenRouterExtractor:
             input_tokens=usage.prompt_tokens if usage else 0,
             output_tokens=usage.completion_tokens if usage else 0,
         )
+
+
+_FIELD_KEYS = (*FIELD_SPECS, "line_items")
+_KEY_RE = re.compile(r'"(' + "|".join(_FIELD_KEYS) + r')"\s*:')
+
+
+class _Progress:
+    """Turns stream events into throttled ``progress(...)`` calls.
+
+    phase="thinking" carries ``words`` (reasoning so far); phase="writing" carries ``found``
+    and ``total``: how many of the output's field keys have appeared in the JSON so far.
+    """
+
+    INTERVAL = 0.4  # seconds between thinking updates; field counts report on every change
+
+    def __init__(self, callback: Callable[..., None] | None):
+        self.callback, self.words, self.found, self.last = callback, 0, 0, 0.0
+
+    def thinking(self, text: str | None) -> None:
+        if not self.callback or not text:
+            return
+        self.words += len(text.split())
+        now = time.monotonic()
+        if now - self.last >= self.INTERVAL:
+            self.last = now
+            self.callback(phase="thinking", words=self.words)
+
+    def writing(self, snapshot: str) -> None:
+        if not self.callback:
+            return
+        found = len(set(_KEY_RE.findall(snapshot)))
+        if found != self.found:
+            self.found = found
+            self.callback(phase="writing", found=found, total=len(_FIELD_KEYS))
 
 
 def _api_key() -> str:

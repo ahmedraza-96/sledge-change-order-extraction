@@ -6,23 +6,24 @@
 <title>Change Order Review</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-  /* A white review desk: the document on the left, what was read from it on the right.
-     The one bold element is the highlighter mark that ties a field to its evidence. */
+  /* A white review desk. Left: the document, every extracted value circled and tied by an
+     arrow to a callout. Right: the extracted JSON, value and confidence per field.
+     A number pin is the shared key between a circle and its JSON line. */
   :root {
     --paper: #ffffff;
     --ink: #17202b;
     --muted: #5d6876;
     --rule: #e2e6eb;
-    --wash: #f6f8fa;          /* quiet fill for inputs and the document well */
-    --blue: #1f5fbf;          /* blueprint blue: anything you can click */
+    --wash: #f6f8fa;
+    --blue: #1f5fbf;          /* blueprint blue: anything you can click, and the selected field */
     --blue-wash: #eaf1fc;
-    --mark: #ffe866;          /* highlighter */
-    --mark-faint: #fff6c2;
     --good: #1b7f45; --good-wash: #e7f5ed;
-    --warn: #a86400; --warn-wash: #fdf3e2;
+    --warn: #b06a00; --warn-wash: #fdf3e2;
     --bad: #c0352b;  --bad-wash: #fdecea;
+    --key: #7a3e9d;           /* JSON keys */
+    --str: #0f6a5c;           /* JSON strings */
     --sans: "Public Sans", "Segoe UI", system-ui, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
     color-scheme: light;
@@ -30,11 +31,11 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--paper); color: var(--ink); }
   body { font: 15px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
-  button, input, select, textarea { font: inherit; color: inherit; }
+  button, input, textarea { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   [hidden] { display: none !important; }
 
-  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 1440px; margin: 0 auto; padding: 0 24px; }
   header.top { border-bottom: 1px solid var(--rule); }
   header.top .wrap { display: flex; align-items: baseline; gap: 16px; padding-block: 18px; flex-wrap: wrap; }
   header.top h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
@@ -53,7 +54,6 @@
   .drop:hover, .drop.over { border-color: var(--blue); background: var(--blue-wash); }
   .drop strong { display: block; font-size: 16px; }
   .drop span { color: var(--muted); font-size: 14px; }
-
   .file {
     display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; align-items: center;
     border: 1px solid var(--rule); border-radius: 10px; padding: 14px; min-height: 168px;
@@ -67,135 +67,155 @@
   .file .name { font-weight: 600; word-break: break-all; }
   .file .size { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
   .file .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
   textarea {
     width: 100%; min-height: 168px; resize: vertical; border: 1px solid var(--rule); border-radius: 10px;
     background: var(--wash); padding: 12px; font: 13px/1.5 var(--mono);
   }
   textarea:focus { background: var(--paper); }
   .samples { display: flex; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--muted); margin-top: 6px; }
-
-  .controls { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
-  .controls .field { display: grid; gap: 4px; min-width: 220px; flex: 1 1 220px; }
-  .controls .field.narrow { flex: 0 1 260px; }
-  select, input[type=text] {
-    border: 1px solid var(--rule); border-radius: 8px; padding: 9px 10px; background: var(--paper); width: 100%;
-  }
-  .btn {
-    border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 7px 12px;
-    cursor: pointer; font-weight: 500;
-  }
+  .go-row { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 500; }
   .btn:hover { border-color: #c5ccd5; background: var(--wash); }
-  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; padding: 10px 22px; }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; padding: 11px 28px; font-size: 16px; }
   .btn.primary:hover { background: #194f9f; }
   .btn.primary:disabled { opacity: .75; cursor: progress; }
   .link { border: 0; background: none; color: var(--blue); padding: 0; cursor: pointer; font-weight: 500; }
   .link:hover { text-decoration: underline; }
   .hint { color: var(--muted); font-size: 14px; }
-  .error {
-    border: 1px solid var(--bad); background: var(--bad-wash); color: var(--bad);
-    border-radius: 8px; padding: 12px 14px; white-space: pre-wrap;
-  }
+  .error { border: 1px solid var(--bad); background: var(--bad-wash); color: var(--bad); border-radius: 8px; padding: 12px 14px; white-space: pre-wrap; }
 
   /* ---------- workspace ---------- */
-  .workspace {
-    display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 28px;
-    border-top: 1px solid var(--rule); padding-block: 24px 64px;
-  }
-  @media (max-width: 980px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
-
-  .viewer {
-    position: sticky; top: 16px; align-self: start; height: calc(100vh - 32px); min-height: 420px;
+  .workspace { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 24px; border-top: 1px solid var(--rule); padding-block: 24px 64px; }
+  @media (max-width: 1080px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
+  .panel {
+    position: sticky; top: 16px; align-self: start; height: calc(100vh - 32px); min-height: 480px;
     display: grid; grid-template-rows: auto minmax(0, 1fr); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden;
   }
-  @media (max-width: 980px) { .viewer { position: static; height: 70vh; } }
-  .viewer-bar { display: flex; align-items: center; gap: 4px; padding: 8px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
-  .tab { border: 0; background: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 500; color: var(--muted); }
-  .tab[aria-selected="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
-  .viewer-bar .doc-name { margin-left: auto; color: var(--muted); font-size: 13px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .viewer-body { overflow: auto; background: var(--wash); }
-  .viewer-body iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
-  .viewer-body .img-wrap { padding: 16px; }
-  .viewer-body img { display: block; max-width: 100%; margin: 0 auto; box-shadow: 0 1px 3px rgba(23, 32, 43, .12); background: var(--paper); cursor: zoom-in; }
-  .viewer-body img.zoomed { max-width: none; cursor: zoom-out; }
-  .viewer-note { margin: 12px 16px 0; padding: 10px 12px; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; font-size: 14px; color: var(--muted); }
-  .page { margin: 16px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; }
-  .page h3 { margin: 0; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--rule); }
-  .page pre { margin: 0; padding: 14px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
-  .page .empty { padding: 14px; color: var(--muted); font-size: 14px; }
-  mark { background: var(--mark-faint); color: inherit; border-radius: 2px; cursor: pointer; }
-  mark.on { background: var(--mark); box-shadow: 0 0 0 2px var(--mark); }
+  @media (max-width: 1080px) { .panel { position: static; height: 78vh; } }
+  .panel-bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; min-height: 50px; }
+  .panel-bar h2 { margin: 0; font-size: 15px; }
+  .panel-bar .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--paper); padding: 5px 12px; cursor: pointer; font-size: 14px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .legend { display: flex; gap: 12px; font-size: 13px; color: var(--muted); align-items: center; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid; margin-right: 4px; vertical-align: -2px; }
 
-  /* results */
-  .results { display: grid; gap: 22px; align-content: start; min-width: 0; }
-  .summary { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; }
-  .score { width: 92px; height: 92px; border-radius: 50%; display: grid; place-items: center; text-align: center; border: 6px solid; }
-  .score b { font-size: 24px; line-height: 1; display: block; }
-  .score span { font-size: 11px; }
-  .summary h2 { margin: 0 0 4px; font-size: 18px; }
-  .summary p { margin: 0; color: var(--muted); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .chip { border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; border: 0; cursor: pointer; }
-  .chip.bad { background: var(--bad-wash); color: var(--bad); }
-  .chip.ok { background: var(--good-wash); color: var(--good); cursor: default; }
+  /* map */
+  .map-body { overflow: auto; background: var(--wash); padding: 16px; display: grid; gap: 16px; align-content: start; }
+  .map-note { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--muted); }
+  .sheet { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
+  .sheet .sheet-head { padding: 6px 12px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--rule); display: flex; gap: 12px; }
+  .sheet svg { display: block; width: 100%; height: auto; }
+  .page-img { pointer-events: none; }
+  .gutter { fill: var(--wash); }
+  .mk { cursor: pointer; transition: opacity .15s; }
+  .mk .ring { fill-opacity: .10; stroke-width: 3.5; }
+  .mk .leader { fill: none; stroke-width: 2.4; }
+  .mk .card { fill: var(--paper); stroke-width: 2; }
+  .mk .pin-c { stroke: var(--paper); stroke-width: 2.5; }
+  .mk .pin-t { fill: #fff; font: 700 17px var(--sans); text-anchor: middle; dominant-baseline: central; }
+  .mk .t-name { font: 600 19px var(--sans); fill: var(--ink); }
+  .mk .t-val { font: 500 19px var(--sans); fill: var(--ink); }
+  .mk .t-conf { font: 700 18px var(--sans); text-anchor: end; }
+  .mk.c-good .ring, .mk.c-good .pin-c { fill: var(--good); } .mk.c-good .ring { stroke: var(--good); }
+  .mk.c-warn .ring, .mk.c-warn .pin-c { fill: var(--warn); } .mk.c-warn .ring { stroke: var(--warn); }
+  .mk.c-bad  .ring, .mk.c-bad  .pin-c { fill: var(--bad); }  .mk.c-bad  .ring { stroke: var(--bad); }
+  .mk.c-good .leader, .mk.c-good .card { stroke: var(--good); }
+  .mk.c-warn .leader, .mk.c-warn .card { stroke: var(--warn); }
+  .mk.c-bad  .leader, .mk.c-bad  .card { stroke: var(--bad); }
+  .mk.c-good .t-conf { fill: var(--good); } .mk.c-warn .t-conf { fill: var(--warn); } .mk.c-bad .t-conf { fill: var(--bad); }
+  .mk.hot .ring, .mk.sel .ring { stroke-width: 5.5; fill-opacity: .18; }
+  .mk.hot .leader, .mk.sel .leader { stroke-width: 3.6; }
+  .mk.sel .card { stroke: var(--blue); stroke-width: 3.5; fill: var(--blue-wash); }
+  .map-body.has-sel .mk:not(.sel):not(.hot) { opacity: .28; }
+  .unmapped { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+  .unmapped h3 { margin: 0 0 6px; font-size: 14px; }
+  .unmapped ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; color: var(--muted); }
+  .unmapped b { color: var(--ink); font-weight: 600; }
 
-  .figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--rule); border-radius: 10px; }
-  @media (max-width: 620px) { .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .figure { padding: 12px 14px; border-left: 1px solid var(--rule); display: grid; gap: 2px; }
-  .figure:first-child { border-left: 0; }
-  @media (max-width: 620px) { .figure:nth-child(3) { border-left: 0; } .figure:nth-child(n+3) { border-top: 1px solid var(--rule); } }
-  .figure span { font-size: 13px; color: var(--muted); }
-  .figure b { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
-  .figure b.neg { color: var(--bad); }
-
-  .section-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-  .section-head h2 { margin: 0; font-size: 16px; }
-  .section-head .tools { margin-left: auto; display: flex; gap: 14px; align-items: center; font-size: 14px; }
-  .toggle { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; color: var(--muted); }
-
-  .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 9px 12px; border-bottom: 1px solid var(--rule); background: var(--wash); }
-  td { padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  tr:last-child td { border-bottom: 0; }
-  tbody.fields tr { cursor: pointer; }
-  tbody.fields tr:hover td { background: var(--wash); }
-  tbody.fields tr.selected td { background: var(--blue-wash); }
-  tbody.fields tr.review td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
-  .fname { font-weight: 600; white-space: nowrap; }
-  .page-ref { color: var(--muted); font-size: 12px; font-weight: 400; }
-  .null { color: var(--muted); font-style: italic; }
-  .why { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--muted); }
-  .why li::before { content: "– "; }
-  .conf { display: flex; align-items: center; gap: 8px; min-width: 120px; }
-  .bar { flex: 1; height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
-  .bar i { display: block; height: 100%; }
-  .num { width: 34px; text-align: right; font-weight: 600; }
-  .right { text-align: right; }
-  .sev { font-size: 12px; font-weight: 700; border-radius: 4px; padding: 1px 6px; }
-  .sev.hard { background: var(--bad-wash); color: var(--bad); }
-  .sev.soft { background: var(--warn-wash); color: var(--warn); }
-  .notes { margin: 0; padding-left: 18px; }
-  .meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
-  .meta b { color: var(--ink); font-weight: 500; }
-  pre.json { margin: 8px 0 0; max-height: 420px; overflow: auto; background: var(--wash); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; font: 12px/1.5 var(--mono); }
-  details summary { cursor: pointer; font-weight: 600; }
+  /* JSON */
+  .json-body { overflow: auto; background: var(--paper); padding: 12px 0; }
+  .json { font: 13px/1.75 var(--mono); min-width: max-content; }
+  .jl { display: grid; grid-template-columns: 40px auto; align-items: center; padding-right: 16px; }
+  .jl .gut { display: grid; place-items: center; }
+  .jl .code { white-space: pre; }
+  .jl.fld { cursor: pointer; border-radius: 4px; }
+  .jl.fld:hover, .jl.fld.hot { background: var(--wash); }
+  .jl.fld.selected { background: var(--blue-wash); }
+  .pin { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font: 700 11px var(--sans); }
+  .pin.none { background: var(--paper); color: var(--muted); border: 1.5px dashed #c5ccd5; }
+  .j-key { color: var(--key); }
+  .j-str { color: var(--str); }
+  .j-num { color: var(--ink); }
+  .j-null, .j-punc { color: var(--muted); }
+  .j-str.j-warn { color: var(--bad); font-weight: 600; }
+  .j-conf { font-weight: 600; border-radius: 4px; padding: 0 4px; }
+  .j-conf.good { color: var(--good); background: var(--good-wash); }
+  .j-conf.warn { color: var(--warn); background: var(--warn-wash); }
+  .j-conf.bad { color: var(--bad); background: var(--bad-wash); }
 
   /* preview dialog */
   dialog { border: 0; border-radius: 12px; padding: 0; width: min(960px, 94vw); height: min(88vh, 1100px); box-shadow: 0 20px 60px rgba(23, 32, 43, .25); }
   dialog::backdrop { background: rgba(23, 32, 43, .45); }
-  dialog .viewer { position: static; height: 100%; border: 0; border-radius: 0; }
+  .dlg { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .dlg-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+  .dlg-bar span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dlg-bar .btn { margin-left: auto; }
+  .dlg-body { overflow: auto; background: var(--wash); }
+  .dlg-body iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
+  .dlg-body .img-wrap { padding: 16px; }
+  .dlg-body img { display: block; max-width: 100%; margin: 0 auto; box-shadow: 0 1px 3px rgba(23, 32, 43, .12); background: var(--paper); cursor: zoom-in; }
+  .dlg-body img.zoomed { max-width: none; cursor: zoom-out; }
+  .dlg-body pre { margin: 16px; padding: 14px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; }
+
+  /* whole-document warnings */
+  .banner { grid-column: 1 / -1; border-radius: 10px; padding: 14px 16px; border: 1px solid; display: grid; gap: 4px; }
+  .banner.bad { background: var(--bad-wash); border-color: var(--bad); color: var(--bad); }
+  .banner.warn { background: var(--warn-wash); border-color: var(--warn); color: var(--warn); }
+  .banner b { font-size: 16px; }
+  .banner span { color: var(--ink); }
+
+  /* progress timeline */
+  .timeline { list-style: none; margin: 0 auto; padding: 16px 18px; border: 1px solid var(--rule); border-radius: 10px; width: 100%; max-width: 560px; display: grid; gap: 0; }
+  .timeline li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 14px; }
+  .timeline li:last-child { padding-bottom: 0; }
+  .timeline li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 26px; bottom: 2px; width: 2px; background: var(--rule); }
+  .timeline li.done:not(:last-child)::after { background: var(--good); }
+  .timeline .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--rule); background: var(--paper); font-size: 14px; font-weight: 700; color: #fff; }
+  .timeline li.done .dot { background: var(--good); border-color: var(--good); }
+  .timeline li.active .dot { border-color: var(--blue); border-right-color: transparent; animation: spin .8s linear infinite; }
+  .timeline li.failed .dot { background: var(--bad); border-color: var(--bad); }
+  .timeline .what { padding-top: 2px; }
+  .timeline .what b { font-weight: 500; color: var(--muted); }
+  .timeline li.active .what b, .timeline li.done .what b { color: var(--ink); }
+  .timeline li.active .what b { font-weight: 600; }
+  .timeline .what small { display: block; color: var(--muted); font-size: 13px; }
+  /* live detail under the model step: always something moving, and real numbers when the model streams */
+  .live { margin-top: 6px; display: grid; gap: 5px; }
+  .live .status { font-size: 13px; color: var(--ink); }
+  .live .status em { font-style: normal; color: var(--muted); }
+  .track { height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; position: relative; }
+  .track .fill { position: absolute; inset: 0 auto 0 0; background: var(--blue); border-radius: 3px; animation: grow .45s ease-out forwards; }
+  .track.indeterminate .fill { width: 35%; animation: slide 1.4s ease-in-out infinite; }
+  @keyframes grow { from { width: var(--from); } to { width: var(--to); } }
+  @keyframes slide { from { left: -35%; } to { left: 100%; } }
 
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner, .timeline li.active .dot { animation-duration: 2.5s; }
+    .track.indeterminate .fill { animation: none; left: 0; width: 100%; opacity: .35; }
+    .track .fill { animation: none; width: var(--to); }
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <header class="top">
   <div class="wrap">
     <h1>Change order review</h1>
-    <p>Upload a change order to pull out its fields, check the math, and see which values need a second look.</p>
+    <p>Upload a change order to get its fields as JSON, each with a confidence score, and see where each one came from.</p>
   </div>
 </header>
 
@@ -230,30 +250,45 @@
         <div class="samples" id="samples"></div>
       </div>
     </div>
-
-    <div class="controls">
-      <div class="field narrow">
-        <label class="label" for="provider">Model provider</label>
-        <select id="provider"></select>
-      </div>
-      <div class="field">
-        <label class="label" for="model">Model</label>
-        <input id="model" type="text" placeholder="Provider default">
-      </div>
-      <button id="go" class="btn primary" type="button">Extract fields</button>
+    <div class="go-row">
+      <button id="go" class="btn primary" type="button">Extract</button>
     </div>
-    <div class="hint">A free model takes about a minute per document, longer if the numbers don't add up and it has to re-read.</div>
+    <ol id="timeline" class="timeline" hidden aria-live="polite" aria-label="Progress"></ol>
     <div id="error" class="error" role="alert" hidden></div>
   </section>
 
   <section id="workspace" class="wrap workspace" hidden aria-label="Results">
-    <div class="viewer" id="viewer"></div>
-    <div class="results" id="results"></div>
+    <div id="banner" class="banner" role="alert" hidden></div>
+    <div class="panel">
+      <div class="panel-bar">
+        <h2>Document</h2>
+        <div class="seg" role="group" aria-label="Which fields to show">
+          <button type="button" data-filter="all" aria-pressed="true">All fields</button>
+          <button type="button" data-filter="review" aria-pressed="false">Below 0.70</button>
+        </div>
+        <span class="spacer"></span>
+        <span class="legend"><span><i style="border-color:var(--good)"></i>0.85+</span><span><i style="border-color:var(--warn)"></i>0.70+</span><span><i style="border-color:var(--bad)"></i>below</span></span>
+        <button class="btn" id="originalBtn" type="button">Original file</button>
+      </div>
+      <div class="map-body" id="mapBody"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-bar">
+        <h2>Extracted JSON</h2>
+        <span class="spacer"></span>
+        <button class="btn" id="copyJson" type="button">Copy</button>
+        <button class="btn" id="dlJson" type="button">Download</button>
+      </div>
+      <div class="json-body" id="jsonBody"></div>
+    </div>
   </section>
 </main>
 
 <dialog id="dialog" aria-label="File preview">
-  <div class="viewer" id="dialogViewer"></div>
+  <div class="dlg">
+    <div class="dlg-bar"><strong>Preview</strong><span id="dlgName"></span><button class="btn" id="dlgClose" type="button">Close</button></div>
+    <div class="dlg-body" id="dlgBody"></div>
+  </div>
 </dialog>
 
 <script>
@@ -274,29 +309,35 @@ const LABELS = {
   schedule_impact_days: "Schedule impact", revised_completion_date: "New completion date", status: "Status",
   contractor_signed: "Contractor signed", owner_signed: "Owner signed",
 };
+const MISSING = {
+  no_quote: "the document doesn't state it",
+  symbol_only: "its quote is only a symbol",
+  not_found: "its quote isn't on the visible page",
+  no_text: "no readable text on that page",
+};
+const label = (name) => LABELS[name] || name.replace(/_/g, " ");
 
-const state = { file: null, url: null, kind: null, ext: "", text: "", sample: null, result: null, selected: null, tab: "original", reviewOnly: false };
+const state = { file: null, url: null, kind: null, ext: "", text: "", sample: null, result: null, selected: null, reviewOnly: false, numbers: {} };
 
-// ---------- formatting ----------
-const color = (c) => c >= 0.85 ? "good" : c >= THRESHOLD ? "warn" : "bad";
+// ---------- formatting (map callouts only; the JSON shows raw values) ----------
+const tone = (c) => c >= 0.85 ? "good" : c >= THRESHOLD ? "warn" : "bad";
 const sizeOf = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 function money(v, cur) {
   try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur || "USD" }).format(Number(v)); }
-  catch { return v; }
+  catch { return String(v); }
 }
-function display(name, v, cur) {
-  if (v === null || v === undefined || v === "") return '<span class="null">Not stated</span>';
-  if (MONEY.has(name)) return esc(money(v, cur));
+function show(name, v, cur) {
+  if (v === null || v === undefined || v === "") return null;
+  if (MONEY.has(name)) return money(v, cur);
   if (typeof v === "boolean") return name.endsWith("_signed") ? (v ? "Signed" : "Not signed") : (v ? "Yes" : "No");
   if (name === "schedule_impact_days") return Number(v) === 0 ? "No change" : `${Number(v) > 0 ? "+" : ""}${v} days`;
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-    const d = new Date(v + "T00:00:00Z");
-    return esc(d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }));
+    return new Date(v + "T00:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
   }
-  if (name === "reason" || name === "status") { const s = String(v).replace(/_/g, " "); return esc(s[0].toUpperCase() + s.slice(1)); }
-  return esc(v);
+  if (name === "reason" || name === "status") { const s = String(v).replace(/_/g, " "); return s[0].toUpperCase() + s.slice(1); }
+  return String(v);
 }
-const confCell = (c) => `<div class="conf"><div class="bar"><i style="width:${Math.round(c * 100)}%;background:var(--${color(c)})"></i></div><span class="num" style="color:var(--${color(c)})">${c.toFixed(2)}</span></div>`;
+const clip = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
 
 // ---------- choosing a document ----------
 function kindOf(name) {
@@ -328,119 +369,215 @@ $("file").onchange = (e) => setFile(e.target.files[0] || null);
 $("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 $("text").oninput = () => { state.sample = null; if ($("text").value && state.file) { setFile(null); $("file").value = ""; } };
 
-// ---------- the document viewer (used in the preview dialog and beside the results) ----------
-function originalHTML(page) {
-  if (state.kind === "pdf") return `<iframe title="Original document" src="${state.url}#page=${page || 1}&view=FitH"></iframe>`;
-  if (state.kind === "image") {
-    if (!BROWSER_IMAGES.includes(state.ext))
-      return `<p class="viewer-note">Your browser can't display ${esc(state.ext.toUpperCase())} files. Use the Text tab after extracting.</p>`;
-    return `<div class="img-wrap"><img src="${state.url}" alt="Uploaded document" title="Click to zoom"></div>`;
-  }
-  return `<div class="page"><pre>${esc(state.text || $("text").value)}</pre></div>`;
-}
-
-// Find a quote in page text, tolerant of whitespace and case. Returns [start, end] or null.
-function locate(hay, quote) {
-  if (!quote) return null;
-  const pattern = quote.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-  const m = new RegExp(pattern, "i").exec(hay);
-  return m ? [m.index, m.index + m[0].length] : null;
-}
-function textHTML() {
-  const r = state.result, doc = r.document;
-  const evid = Object.entries(r.fields).filter(([k, f]) => k !== "line_items" && f.evidence);
-  return doc.pages.map((text, i) => {
-    const pageNo = i + 1;
-    if (doc.scanned_pages.includes(pageNo) || !text.trim())
-      return `<div class="page"><h3>Page ${pageNo}</h3><div class="empty">This page is an image with no text layer. The model read it from the picture; see the Original tab.</div></div>`;
-    // Mark every quote on this page, the selected field first so it wins any overlap.
-    const ranges = [];
-    const order = evid.slice().sort(([a], [b]) => (b === state.selected) - (a === state.selected));
-    for (const [name, f] of order) {
-      if (f.page && f.page !== pageNo) continue;
-      const at = locate(text, f.evidence);
-      if (at && !ranges.some((x) => at[0] < x[1] && x[0] < at[1])) ranges.push([...at, name]);
-    }
-    ranges.sort((a, b) => a[0] - b[0]);
-    let html = "", pos = 0;
-    for (const [s, e, name] of ranges) {
-      html += esc(text.slice(pos, s)) + `<mark data-field="${name}" class="${name === state.selected ? "on" : ""}" title="${esc(LABELS[name] || name)}">${esc(text.slice(s, e))}</mark>`;
-      pos = e;
-    }
-    html += esc(text.slice(pos));
-    return `<div class="page"><h3>Page ${pageNo}</h3><pre>${html}</pre></div>`;
-  }).join("");
-}
-function renderViewer(el, { tabs, tab, note = "", page }) {
-  const showTabs = tabs.length > 1;
-  el.innerHTML = `
-    <div class="viewer-bar" role="tablist">
-      ${showTabs ? tabs.map((t) => `<button class="tab" role="tab" data-tab="${t}" aria-selected="${t === tab}">${t === "original" ? "Original" : "Text read from it"}</button>`).join("") : '<strong style="padding:6px 8px">Document</strong>'}
-      <span class="doc-name">${esc(state.file ? state.file.name : "Pasted text")}</span>
-      ${el.id === "dialogViewer" ? '<button class="btn" data-close type="button">Close</button>' : ""}
-    </div>
-    <div class="viewer-body">${note ? `<p class="viewer-note">${note}</p>` : ""}${tab === "original" ? originalHTML(page) : textHTML()}</div>`;
-  el.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { state.tab = b.dataset.tab; refreshViewer(); });
-  el.querySelectorAll("img").forEach((img) => img.onclick = () => img.classList.toggle("zoomed"));
-  el.querySelectorAll("mark[data-field]").forEach((m) => m.onclick = () => select(m.dataset.field, { fromDoc: true }));
-  const close = el.querySelector("[data-close]"); if (close) close.onclick = () => $("dialog").close();
-}
+// ---------- original-file preview ----------
 function openPreview() {
-  if (!state.file) return;
-  renderViewer($("dialogViewer"), { tabs: ["original"], tab: "original" });
+  const body = $("dlgBody");
+  $("dlgName").textContent = state.file ? state.file.name : "Pasted text";
+  if (state.file && state.kind === "pdf") body.innerHTML = `<iframe title="Original document" src="${state.url}#view=FitH"></iframe>`;
+  else if (state.file && state.kind === "image") body.innerHTML = BROWSER_IMAGES.includes(state.ext)
+    ? `<div class="img-wrap"><img src="${state.url}" alt="Uploaded document" title="Click to zoom"></div>`
+    : `<pre>Your browser can't display ${esc(state.ext.toUpperCase())} files. The document panel shows the converted page.</pre>`;
+  else body.innerHTML = `<pre>${esc(state.text || $("text").value)}</pre>`;
+  body.querySelectorAll("img").forEach((img) => img.onclick = () => img.classList.toggle("zoomed"));
   $("dialog").showModal();
 }
 $("previewBtn").onclick = openPreview;
 $("thumb").onclick = openPreview;
+$("originalBtn").onclick = openPreview;
+$("dlgClose").onclick = () => $("dialog").close();
 $("dialog").addEventListener("click", (e) => { if (e.target === $("dialog")) $("dialog").close(); });
 
-function refreshViewer(note = "", page) {
-  const hasOriginal = state.kind === "pdf" || state.kind === "image";
-  const tabs = hasOriginal ? ["original", "text"] : ["text"];
-  if (!tabs.includes(state.tab)) state.tab = tabs[0];
-  renderViewer($("viewer"), { tabs, tab: state.tab, note, page });
-  const on = $("viewer").querySelector("mark.on");
-  if (on) on.scrollIntoView({ block: "center", behavior: "smooth" });
+// ---------- the document map ----------
+// Page images are drawn 1000 units wide; callouts live in a gutter to the right.
+const PW = 1000, GUT = 470, CARD_X = PW + 46, CARD_W = GUT - 62, CARD_H = 70, GAP = 10;
+
+function ellipsePoint(cx, cy, rx, ry, tx, ty) {
+  const dx = tx - cx, dy = ty - cy;
+  const t = 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2);
+  return [cx + dx * t, cy + dy * t];
 }
 
-// Clicking a field shows where it came from.
-function select(name, { fromDoc = false } = {}) {
-  state.selected = name;
-  document.querySelectorAll("tbody.fields tr").forEach((tr) => tr.classList.toggle("selected", tr.dataset.field === name));
-  const f = state.result.fields[name], doc = state.result.document;
-  let note = "";
-  const page = f.page || 1;
-  const pageText = doc.pages[page - 1] || "";
-  if (!f.evidence) note = `${esc(LABELS[name] || name)}: the model didn't quote any text for this field.`;
-  else if (doc.scanned_pages.includes(page) || !pageText.trim()) {
-    state.tab = state.kind === "text" ? "text" : "original";
-    note = `${esc(LABELS[name] || name)} came from page ${page}, which is an image. The model quoted: <b>“${esc(f.evidence)}”</b>`;
-  } else {
-    state.tab = "text";
-    if (!locate(pageText, f.evidence)) note = `The quote for ${esc(LABELS[name] || name)} wasn't found word for word on page ${page}: <b>“${esc(f.evidence)}”</b>`;
-  }
-  refreshViewer(note, page);
-  if (fromDoc) {
-    const row = document.querySelector(`tbody.fields tr[data-field="${name}"]`);
-    if (row) row.scrollIntoView({ block: "center", behavior: "smooth" });
-  }
+function renderMap() {
+  const r = state.result, pv = r.preview, cur = r.change_order.currency;
+  const shown = (name) => !state.reviewOnly || r.fields[name].confidence < THRESHOLD;
+  const sheets = pv.pages.map((pg, i) => {
+    const page = i + 1, H = PW * pg.height / pg.width;
+    const items = Object.entries(pv.marks).filter(([name, m]) => m.page === page && shown(name)).map(([name, m]) => {
+      const [x0, y0, x1, y1] = m.box;
+      const bx = x0 * PW, by = y0 * H, bw = (x1 - x0) * PW, bh = (y1 - y0) * H;
+      return { name, f: r.fields[name], cx: bx + bw / 2, cy: by + bh / 2, rx: bw / 2 + 12, ry: Math.max(bh / 2 + 9, 16) };
+    }).sort((a, b) => a.cy - b.cy);
+
+    // Callouts sit level with their circle, pushed down to clear the one above,
+    // then pulled back up if the last one runs off the page.
+    let y = 0;
+    for (const it of items) { it.ly = Math.max(it.cy - CARD_H / 2, y); y = it.ly + CARD_H + GAP; }
+    if (y - GAP > H) {
+      let limit = H;
+      for (let k = items.length - 1; k >= 0; k--) { const it = items[k]; it.ly = Math.min(it.ly, limit - CARD_H); limit = it.ly - GAP; }
+      const top = items.length ? items[0].ly : 0;
+      if (top < 0) items.forEach((it) => it.ly -= top);   // still too many: start at the top and let the sheet grow
+    }
+    const VH = Math.max(H, items.length ? items[items.length - 1].ly + CARD_H + 8 : H);
+
+    const marks = items.map((it) => {
+      const n = state.numbers[it.name], t = tone(it.f.confidence);
+      const ax = CARD_X, ay = it.ly + CARD_H / 2;
+      const [px, py] = ellipsePoint(it.cx, it.cy, it.rx, it.ry, ax, ay);
+      const c1 = ax - Math.max(40, (ax - px) * 0.45), c2 = px + Math.max(40, (ax - px) * 0.35);
+      const val = clip(show(it.name, it.f.value, cur) ?? "Not stated", 26);
+      return `
+        <g class="mk c-${t}" data-field="${it.name}" tabindex="0" role="button" aria-label="${esc(label(it.name))}: ${esc(val)}">
+          <path class="leader" d="M${ax},${ay} C${c1},${ay} ${c2},${py} ${px},${py}" marker-end="url(#ah-${t})"/>
+          <ellipse class="ring" cx="${it.cx}" cy="${it.cy}" rx="${it.rx}" ry="${it.ry}"/>
+          <circle class="pin-c" cx="${it.cx - it.rx + 4}" cy="${it.cy - it.ry + 2}" r="14"/>
+          <text class="pin-t" x="${it.cx - it.rx + 4}" y="${it.cy - it.ry + 2}">${n}</text>
+          <rect class="card" x="${CARD_X}" y="${it.ly}" width="${CARD_W}" height="${CARD_H}" rx="9"/>
+          <circle class="pin-c" cx="${CARD_X + 22}" cy="${it.ly + 23}" r="14"/>
+          <text class="pin-t" x="${CARD_X + 22}" y="${it.ly + 23}">${n}</text>
+          <text class="t-name" x="${CARD_X + 44}" y="${it.ly + 29}">${esc(clip(label(it.name), 22))}</text>
+          <text class="t-conf" x="${CARD_X + CARD_W - 12}" y="${it.ly + 29}">${it.f.confidence.toFixed(2)}</text>
+          <text class="t-val" x="${CARD_X + 14}" y="${it.ly + 56}">${esc(val)}</text>
+          <title>${esc(label(it.name))} (${it.name}): ${esc(show(it.name, it.f.value, cur) ?? "Not stated")}</title>
+        </g>`;
+    }).join("");
+    const how = pv.positions[String(page)];
+    return `
+      <div class="sheet">
+        <div class="sheet-head"><span>Page ${page}</span>${how === "ocr" ? "<span>Positions read with OCR; circles may be slightly off.</span>" : how === "none" ? "<span>No readable text on this page, so nothing could be placed.</span>" : ""}</div>
+        <svg viewBox="0 0 ${PW + GUT} ${VH}" role="img" aria-label="Page ${page} with ${items.length} extracted fields circled">
+          <rect class="gutter" x="${PW}" y="0" width="${GUT}" height="${VH}"/>
+          <image class="page-img" href="${pg.image}" x="0" y="0" width="${PW}" height="${H}"/>
+          ${marks}
+        </svg>
+      </div>`;
+  }).join("");
+
+  const missing = Object.entries(pv.missing).filter(([name]) => shown(name));
+  $("mapBody").innerHTML = sheets + (missing.length ? `
+    <div class="unmapped"><h3>Not shown on the page</h3><ul>${missing.map(([name, why]) =>
+      `<li><b>${esc(label(name))}</b>: ${MISSING[why] || why}</li>`).join("")}</ul></div>` : "");
+
+  $("mapBody").classList.toggle("has-sel", !!state.selected);
+  $("mapBody").querySelectorAll(".mk").forEach((g) => {
+    g.classList.toggle("sel", g.dataset.field === state.selected);
+    g.onclick = () => select(g.dataset.field, { from: "map" });
+    g.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(g.dataset.field, { from: "map" }); } };
+    g.onmouseenter = () => hot(g.dataset.field, true);
+    g.onmouseleave = () => hot(g.dataset.field, false);
+  });
 }
 
-// ---------- providers and samples ----------
-async function loadProviders() {
-  const list = await (await fetch("/api/providers")).json();
-  const sel = $("provider");
-  sel.innerHTML = list.map((p) => `<option value="${p.id}" data-model="${esc(p.default_model)}" ${p.available ? "" : "disabled"}>${esc(p.label)}${p.available ? "" : " (no API key)"}</option>`).join("");
-  const first = list.find((p) => p.available && p.id === "openrouter")
-    || list.find((p) => p.available && p.id !== "demo") || list.find((p) => p.available);
-  if (first) sel.value = first.id;
-  sel.onchange = () => { $("model").placeholder = sel.selectedOptions[0].dataset.model; };
-  sel.onchange();
+// One SVG defs block for the arrowheads, shared by every page.
+document.body.insertAdjacentHTML("beforeend", `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  ${["good", "warn", "bad"].map((t) => `<marker id="ah-${t}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--${t})"/></marker>`).join("")}
+</defs></svg>`);
+
+// ---------- the extracted JSON ----------
+// Exactly what the user asked for: every field's value and confidence, plus the document's.
+// Problems with the document as a whole: the issues that aren't tied to any one field.
+const DOC_WARNINGS = {
+  not_a_change_order: () => "This document is not a change order.",
+  multiple_change_orders: (i) => i.message.replace(/\.$/, "") + ".",
+};
+const docWarnings = (r) => r.issues.filter((i) => DOC_WARNINGS[i.code]).map((i) => ({ code: i.code, text: DOC_WARNINGS[i.code](i) }));
+function simplified(r) {
+  const round = (c) => Math.round(c * 100) / 100;   // two decimals, as displayed
+  const out = { document_confidence: round(r.document_confidence) };
+  const warnings = docWarnings(r).map((w) => w.text);
+  if (warnings.length) out.warnings = warnings;
+  out.fields = {};
+  for (const [name, f] of Object.entries(r.fields)) out.fields[name] = { value: f.value, confidence: round(f.confidence) };
+  return out;
 }
+function jsonValue(v, indent) {
+  if (v === null) return '<span class="j-null">null</span>';
+  if (typeof v === "string") return `<span class="j-str">${esc(JSON.stringify(v))}</span>`;
+  if (typeof v === "number" || typeof v === "boolean") return `<span class="j-num">${v}</span>`;
+  const pad = " ".repeat(indent + 2), end = " ".repeat(indent);
+  if (Array.isArray(v)) {
+    if (!v.length) return '<span class="j-punc">[]</span>';
+    return '<span class="j-punc">[</span>\n' + v.map((x) => pad + jsonValue(x, indent + 2)).join('<span class="j-punc">,</span>\n') + `\n${end}<span class="j-punc">]</span>`;
+  }
+  const keys = Object.keys(v);
+  return '<span class="j-punc">{</span>\n' + keys.map((k) => `${pad}<span class="j-key">${esc(JSON.stringify(k))}</span><span class="j-punc">: </span>${jsonValue(v[k], indent + 2)}`).join('<span class="j-punc">,</span>\n') + `\n${end}<span class="j-punc">}</span>`;
+}
+function renderJSON() {
+  const r = state.result, data = simplified(r), marks = r.preview.marks;
+  const line = (code, gut = "", attrs = "") => `<div class="jl"${attrs}><span class="gut">${gut}</span><span class="code">${code}</span></div>`;
+  const conf = (c) => `<span class="j-conf ${tone(c)}">${c}</span>`;
+  const names = Object.keys(data.fields);
+  let html = line('<span class="j-punc">{</span>');
+  html += line(`  <span class="j-key">"document_confidence"</span><span class="j-punc">: </span>${conf(data.document_confidence)}<span class="j-punc">,</span>`);
+  if (data.warnings) {
+    html += line('  <span class="j-key">"warnings"</span><span class="j-punc">: [</span>');
+    data.warnings.forEach((w, i) => html += line(`    <span class="j-str j-warn">${esc(JSON.stringify(w))}</span>${i < data.warnings.length - 1 ? '<span class="j-punc">,</span>' : ""}`));
+    html += line('  <span class="j-punc">],</span>');
+  }
+  html += line('  <span class="j-key">"fields"</span><span class="j-punc">: {</span>');
+  names.forEach((name, i) => {
+    const f = data.fields[name], comma = i < names.length - 1 ? '<span class="j-punc">,</span>' : "";
+    const n = state.numbers[name];
+    const gut = n ? (marks[name] ? `<span class="pin" style="background:var(--${tone(f.confidence)})">${n}</span>` : `<span class="pin none" title="Not shown on the page">${n}</span>`) : "";
+    const attrs = ` data-field="${name}" class="jl fld${name === state.selected ? " selected" : ""}"`;
+    if (name === "line_items") {
+      // Line items are a list: show it expanded so each row reads on its own line.
+      const body = jsonValue(f.value, 6).split("\n");
+      const head = `    <span class="j-key">"line_items"</span><span class="j-punc">: { </span><span class="j-key">"value"</span><span class="j-punc">: </span>`;
+      const tail = `<span class="j-punc">, </span><span class="j-key">"confidence"</span><span class="j-punc">: </span>${conf(f.confidence)}<span class="j-punc"> }</span>${comma}`;
+      if (body.length === 1) { html += line(head + body[0] + tail, gut, attrs); return; }
+      html += line(head + body[0], gut, attrs);
+      body.slice(1, -1).forEach((b) => html += line(b));
+      html += line(body[body.length - 1] + tail);
+      return;
+    }
+    html += line(`    <span class="j-key">${esc(JSON.stringify(name))}</span><span class="j-punc">: { </span><span class="j-key">"value"</span><span class="j-punc">: </span>${jsonValue(f.value, 0)}<span class="j-punc">, </span><span class="j-key">"confidence"</span><span class="j-punc">: </span>${conf(f.confidence)}<span class="j-punc"> }</span>${comma}`, gut, attrs);
+  });
+  html += line('  <span class="j-punc">}</span>') + line('<span class="j-punc">}</span>');
+  $("jsonBody").innerHTML = `<div class="json">${html}</div>`;
+  $("jsonBody").querySelectorAll(".jl.fld").forEach((el) => {
+    el.onclick = () => select(el.dataset.field, { from: "json" });
+    el.onmouseenter = () => hot(el.dataset.field, true);
+    el.onmouseleave = () => hot(el.dataset.field, false);
+  });
+}
+const jsonText = () => JSON.stringify(simplified(state.result), null, 2);
+$("copyJson").onclick = async () => {
+  try { await navigator.clipboard.writeText(jsonText()); $("copyJson").textContent = "Copied"; }
+  catch { $("copyJson").textContent = "Copy failed"; }
+  setTimeout(() => $("copyJson").textContent = "Copy", 1500);
+};
+$("dlJson").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([jsonText()], { type: "application/json" }));
+  a.download = (state.result.source || "result").replace(/\.[^.]+$/, "") + ".json";
+  a.click();
+};
+
+// ---------- linking the two panels ----------
+function hot(name, on) {
+  document.querySelectorAll(`[data-field="${name}"]`).forEach((el) => el.classList.toggle("hot", on));
+}
+function select(name, { from } = {}) {
+  state.selected = state.selected === name ? null : name;
+  $("mapBody").classList.toggle("has-sel", !!state.selected);
+  document.querySelectorAll(".mk").forEach((g) => g.classList.toggle("sel", g.dataset.field === state.selected));
+  document.querySelectorAll(".jl.fld").forEach((el) => el.classList.toggle("selected", el.dataset.field === state.selected));
+  if (!state.selected) return;
+  if (from !== "map") $("mapBody").querySelector(`.mk[data-field="${name}"] ellipse`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  if (from !== "json") $("jsonBody").querySelector(`.jl[data-field="${name}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+document.querySelectorAll("[data-filter]").forEach((b) => b.onclick = () => {
+  state.reviewOnly = b.dataset.filter === "review";
+  document.querySelectorAll("[data-filter]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  renderMap();
+});
+
+// ---------- samples ----------
 async function loadSamples() {
   const names = await (await fetch("/api/samples")).json();
   if (!names.length) return;
-  $("samples").innerHTML = "<span>Try a sample:</span>" + names.map((n) => `<button class="link" type="button" data-s="${esc(n)}">${esc(n.replace(/_/g, " "))}</button>`).join("");
+  $("samples").innerHTML = "<span>Try a sample (recorded result, no model call):</span>" + names.map((n) => `<button class="link" type="button" data-s="${esc(n)}">${esc(n.replace(/_/g, " "))}</button>`).join("");
   $("samples").querySelectorAll("button").forEach((b) => b.onclick = async () => {
     await setFile(null); $("file").value = "";
     $("text").value = await (await fetch("/api/samples/" + encodeURIComponent(b.dataset.s))).text();
@@ -448,133 +585,145 @@ async function loadSamples() {
   });
 }
 
+// ---------- progress timeline ----------
+// Driven by the server's real progress events, so each tick means that step actually finished.
+const STEPS = [
+  { id: "read", label: "Reading the document" },
+  { id: "extract", label: "Reading the fields with the AI model", note: "The longest step, usually under a minute." },
+  { id: "validate", label: "Checking the math", note: "Line items, subtotal, total and the contract sum." },
+  { id: "repair", label: "Re-reading to fix what didn't add up", optional: true },
+  { id: "score", label: "Scoring confidence for each field" },
+  { id: "map", label: "Marking the fields on the page" },
+];
+const progress = { current: null, seen: new Set(), info: {}, bar: {}, failed: false };
+// The validator's check codes, in words (see validate.py).
+const CHECKS = {
+  unparseable: "a value couldn't be read",
+  missing_critical: "the change order number is missing",
+  line_item_math: "a line's quantity × price doesn't match its amount",
+  line_items_vs_subtotal: "the line items don't add up to the subtotal",
+  subtotal_to_total: "subtotal + markup + tax doesn't equal the total",
+  contract_sum_rollforward: "the contract sums don't add up",
+  date_order: "the dates are out of order",
+  implausible_value: "a value looks implausible",
+  credit_sign: "a credit has the wrong sign",
+  not_a_change_order: "it doesn't look like a change order",
+  multiple_change_orders: "it holds more than one change order",
+};
+function renderTimeline() {
+  const order = STEPS.map((s) => s.id);
+  const at = order.indexOf(progress.current);
+  $("timeline").innerHTML = STEPS.filter((s) => !s.optional || progress.seen.has(s.id)).map((s) => {
+    const i = order.indexOf(s.id);
+    const status = progress.failed && s.id === progress.current ? "failed" : i < at ? "done" : i === at ? "active" : "pending";
+    let note = s.note || "";
+    if (s.id === "repair" && progress.info.repair) {
+      const checks = [...new Set(progress.info.repair.checks)].map((c) => CHECKS[c] || c.replace(/_/g, " "));
+      note = `On the first read ${checks.join("; ")}. The model is reading it again with those checks in mind.`;
+    }
+    if (s.id === "map" && progress.info.map?.ocr) note = "Reading word positions on the scan.";
+    if (status === "done" && s.id !== "repair") note = "";
+    const icon = status === "done" ? "✓" : status === "failed" ? "✕" : "";
+    const live = status === "active" && (s.id === "extract" || s.id === "repair") ? liveDetail(s.id) : "";
+    return `<li class="${status}"><span class="dot" aria-hidden="true">${icon}</span><span class="what"><b>${s.label}</b>${note ? `<small>${esc(note)}</small>` : ""}${live}</span></li>`;
+  }).join("");
+}
+// What the model is doing right now, from the streamed progress events. Providers that
+// don't stream never send them, and the sliding bar alone shows the request is alive.
+function liveDetail(stepId) {
+  const info = progress.info[stepId] || {};
+  if (info.phase === "writing") {
+    const to = Math.round(100 * info.found / info.total), from = progress.bar[stepId] ?? 0;
+    progress.bar[stepId] = to;
+    return `<span class="live"><span class="status">Writing the fields <em>· ${info.found} of ${info.total}</em></span>
+      <span class="track" role="progressbar" aria-valuemin="0" aria-valuemax="${info.total}" aria-valuenow="${info.found}"><span class="fill" style="--from:${from}%;--to:${to}%"></span></span></span>`;
+  }
+  const text = info.phase === "thinking"
+    ? `Thinking about the document <em>· ${info.words.toLocaleString()} words so far</em>`
+    : "Waiting for the model to start…";
+  return `<span class="live"><span class="status">${text}</span><span class="track indeterminate" aria-hidden="true"><span class="fill"></span></span></span>`;
+}
+function onStep(ev) {
+  progress.current = ev.step; progress.seen.add(ev.step);
+  // Repeated events for one step (live model progress) update it rather than replace it.
+  progress.info[ev.step] = { ...progress.info[ev.step], ...ev };
+  renderTimeline();
+}
+
+// Read the newline-delimited JSON progress stream; resolves with the final result.
+async function extractWithProgress(fd) {
+  const resp = await fetch("/api/extract/stream", { method: "POST", body: fd });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail));
+  }
+  const reader = resp.body.getReader(), decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+      if (!line) continue;
+      const ev = JSON.parse(line);
+      if (ev.step) onStep(ev);
+      else if (ev.error) throw new Error(ev.error);
+      else if (ev.result) return ev.result;
+    }
+  }
+  throw new Error("The connection closed before the result arrived. Try again.");
+}
+
 // ---------- extraction ----------
 $("go").onclick = async () => {
   const fd = new FormData();
-  fd.append("provider", $("provider").value);
-  if ($("model").value.trim()) fd.append("model", $("model").value.trim());
   if (state.file) fd.append("file", state.file);
   else {
     if (!$("text").value.trim()) return showError("Upload a file or paste the change order text first.");
     fd.append("text", $("text").value);
-    if (state.sample) fd.append("name", state.sample);
+    // A sample replays its recorded result, so trying the app never spends API quota.
+    if (state.sample) { fd.append("name", state.sample); fd.append("provider", "demo"); }
     state.kind = "text"; state.text = $("text").value;
   }
   $("error").hidden = true;
-  const btn = $("go"), t0 = Date.now();
+  const btn = $("go");
   btn.disabled = true;
-  const tick = () => { btn.innerHTML = `<span class="spinner"></span>Extracting, ${Math.round((Date.now() - t0) / 1000)} s`; };
-  tick(); const timer = setInterval(tick, 1000);
+  btn.innerHTML = '<span class="spinner"></span>Extracting';
+  Object.assign(progress, { current: "read", seen: new Set(["read"]), info: {}, bar: {}, failed: false });
+  renderTimeline();
+  $("timeline").hidden = false;
   try {
-    const resp = await fetch("/api/extract", { method: "POST", body: fd });
-    const body = await resp.json().catch(() => ({ detail: resp.statusText }));
-    if (!resp.ok) throw new Error(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail));
+    const body = await extractWithProgress(fd);
+    $("timeline").hidden = true;
     state.result = body; state.selected = null; state.reviewOnly = false;
-    state.tab = state.kind === "text" ? "text" : "original";
-    renderResults();
+    document.querySelectorAll("[data-filter]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.filter === "all")));
+    // Number every field in output order; the same number pins the circle and the JSON line.
+    state.numbers = {};
+    Object.keys(body.fields).filter((k) => k !== "line_items").forEach((k, i) => state.numbers[k] = i + 1);
     $("workspace").hidden = false;
-    refreshViewer();
+    renderBanner(); renderMap(); renderJSON();
     $("workspace").scrollIntoView({ behavior: "smooth" });
   } catch (err) {
+    progress.failed = true; renderTimeline();
     showError("Extraction failed: " + err.message);
   } finally {
-    clearInterval(timer); btn.disabled = false; btn.textContent = "Extract fields";
+    btn.disabled = false; btn.textContent = "Extract";
   }
 };
+function renderBanner() {
+  const ws = docWarnings(state.result), banner = $("banner");
+  const notCO = ws.some((w) => w.code === "not_a_change_order");
+  banner.hidden = !ws.length;
+  if (!ws.length) return;
+  banner.className = "banner " + (notCO ? "bad" : "warn");
+  banner.innerHTML = notCO
+    ? `<b>This doesn't look like a change order.</b><span>The model still filed what it found into change-order fields, so treat these values as unreliable. Every confidence is set to 0 and the document needs a person to review it.</span>`
+    : ws.map((w) => `<b>${esc(w.text)}</b>`).join("") + "<span>Check the document before using these values.</span>";
+}
 function showError(msg) { $("error").textContent = msg; $("error").hidden = false; }
 
-function renderResults() {
-  const r = state.result, m = r.meta, dc = r.document_confidence, co = r.change_order, cur = co.currency;
-  const review = r.needs_review;
-  const total = co.total_change_amount;
-  const figure = (label, name) => {
-    const v = co[name];
-    const neg = MONEY.has(name) && v !== null && Number(v) < 0;
-    return `<div class="figure"><span>${label}</span><b class="${neg ? "neg" : ""}">${display(name, v, cur)}</b></div>`;
-  };
-  const rows = Object.entries(r.fields).filter(([k]) => k !== "line_items")
-    .filter(([, f]) => !state.reviewOnly || f.confidence < THRESHOLD)
-    .map(([name, f]) => `
-      <tr data-field="${name}" class="${f.confidence < THRESHOLD ? "review" : ""} ${name === state.selected ? "selected" : ""}">
-        <td class="fname" title="${name}">${esc(LABELS[name] || name)}${f.page ? ` <span class="page-ref">p.${f.page}</span>` : ""}</td>
-        <td>${display(name, f.value, cur)}${f.reasons.length ? `<ul class="why">${f.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</td>
-        <td>${confCell(f.confidence)}</td>
-      </tr>`).join("");
-  const li = r.fields.line_items;
-  const liRows = li.value.map((x) => `<tr><td>${esc(x.description || "")}</td><td class="right">${x.quantity ?? ""} ${esc(x.unit || "")}</td><td class="right">${x.unit_price === null ? "" : esc(money(x.unit_price, cur))}</td><td class="right">${x.amount === null ? "" : esc(money(x.amount, cur))}</td></tr>`).join("")
-    || '<tr><td colspan="4" class="null">No line items on this document</td></tr>';
-  const issues = r.issues.length
-    ? `<div class="table-wrap"><table><thead><tr><th>Severity</th><th>Check</th><th>What happened</th></tr></thead><tbody>${r.issues.map((i) =>
-        `<tr><td><span class="sev ${i.severity}">${i.severity === "hard" ? "Error" : "Warning"}</span></td><td>${esc(i.code.replace(/_/g, " "))}</td><td>${esc(i.message)}</td></tr>`).join("")}</tbody></table></div>`
-    : '<p class="hint" style="margin:0">Every check passed: line items, subtotal, total and the contract sum all add up.</p>';
-  const repaired = m.repair ? `<span>Re-read once after: <b>${esc(m.repair.triggered_by.join(", ").replace(/_/g, " "))}</b></span>` : "";
-
-  $("results").innerHTML = `
-    <div class="summary">
-      <div class="score" style="border-color:var(--${color(dc)});color:var(--${color(dc)})"><div><b>${Math.round(dc * 100)}</b><span>confidence</span></div></div>
-      <div>
-        <h2>${review.length ? `${review.length} field${review.length > 1 ? "s" : ""} need${review.length > 1 ? "" : "s"} review` : "Nothing needs review"}</h2>
-        <p>${review.length ? "Click a field to see where it came from in the document." : "Every field is backed by a quote from the document and the numbers add up."}</p>
-        <div class="chips">${review.length ? review.map((f) => `<button class="chip bad" type="button" data-pick="${f}">${esc(LABELS[f] || f.replace(/_/g, " "))}</button>`).join("") : '<span class="chip ok">All clear</span>'}</div>
-      </div>
-    </div>
-    <div class="figures">
-      ${figure("Change order", "change_order_number")}
-      ${figure(total !== null && Number(total) < 0 ? "Credit this order" : "This change order", "total_change_amount")}
-      ${figure("New contract sum", "revised_contract_sum")}
-      ${figure("Schedule", "schedule_impact_days")}
-    </div>
-    <section>
-      <div class="section-head"><h2>Fields</h2>
-        <div class="tools"><label class="toggle"><input type="checkbox" id="reviewOnly" ${state.reviewOnly ? "checked" : ""}> Only fields that need review</label></div>
-      </div>
-      <div class="table-wrap"><table><thead><tr><th>Field</th><th>Value</th><th>Confidence</th></tr></thead><tbody class="fields">${rows || '<tr><td colspan="3" class="null">No fields need review.</td></tr>'}</tbody></table></div>
-    </section>
-    <section>
-      <div class="section-head"><h2>Line items</h2><div class="tools">${confCell(li.confidence)}</div></div>
-      ${li.reasons.length ? `<ul class="why" style="margin-bottom:8px">${li.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-      <div class="table-wrap"><table><thead><tr><th>Description</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Amount</th></tr></thead><tbody>${liRows}</tbody></table></div>
-    </section>
-    <section>
-      <div class="section-head"><h2>Checks</h2></div>
-      ${issues}
-    </section>
-    ${r.notes.length ? `<section><div class="section-head"><h2>Notes from the model</h2></div><ul class="notes">${r.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></section>` : ""}
-    <div class="meta">
-      <span>Model: <b>${esc(m.model)}</b></span>
-      <span>Time: <b>${m.seconds} s</b></span>
-      <span>Model calls: <b>${m.llm_calls}</b></span>
-      ${m.input_tokens || m.output_tokens ? `<span>Tokens: <b>${m.input_tokens.toLocaleString()} in, ${m.output_tokens.toLocaleString()} out</b></span>` : ""}
-      ${repaired}
-    </div>
-    <details>
-      <summary>JSON output</summary>
-      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="copyJson" type="button">Copy JSON</button><button class="btn" id="dlJson" type="button">Download JSON</button></div>
-      <pre class="json">${esc(JSON.stringify(withoutDocument(r), null, 2))}</pre>
-    </details>`;
-
-  document.querySelectorAll("tbody.fields tr[data-field]").forEach((tr) => tr.onclick = () => select(tr.dataset.field));
-  document.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => {
-    select(b.dataset.pick);
-    document.querySelector(`tbody.fields tr[data-field="${b.dataset.pick}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-  });
-  $("reviewOnly").onchange = (e) => { state.reviewOnly = e.target.checked; renderResults(); };
-  $("copyJson").onclick = async () => {
-    try { await navigator.clipboard.writeText(JSON.stringify(withoutDocument(r), null, 2)); $("copyJson").textContent = "Copied"; }
-    catch { $("copyJson").textContent = "Copy failed"; }
-    setTimeout(() => { if ($("copyJson")) $("copyJson").textContent = "Copy JSON"; }, 1500);
-  };
-  $("dlJson").onclick = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(withoutDocument(r), null, 2)], { type: "application/json" }));
-    a.download = (r.source || "result").replace(/\.[^.]+$/, "") + ".json";
-    a.click();
-  };
-}
-// The page text is only there for highlighting; the JSON the user takes away is the pipeline's output.
-function withoutDocument(r) { const { document: _, ...rest } = r; return rest; }
-
-loadProviders();
 loadSamples();
 </script>
 </body>

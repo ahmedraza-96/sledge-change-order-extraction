@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -63,7 +64,10 @@ class LLMResult:
 
 
 class Extractor(Protocol):
-    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None) -> LLMResult: ...
+    # ``progress(**info)``, if given, may be called while the model is answering; backends
+    # that can't report progress ignore it.
+    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None,
+                progress: Callable[..., None] | None = None) -> LLMResult: ...
 
 
 def wants_pdf(doc: Document, send_pdf: bool) -> bool:
@@ -112,7 +116,8 @@ class ClaudeExtractor:
         self.effort = effort
         self.send_pdf = send_pdf
 
-    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None) -> LLMResult:
+    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None,
+                progress: Callable[..., None] | None = None) -> LLMResult:
         try:
             resp = self.client.beta.messages.parse(
                 model=self.model,
@@ -156,7 +161,7 @@ class FixtureExtractor:
     def __init__(self, fixture_dir: str | Path):
         self.dir = Path(fixture_dir)
 
-    def extract(self, doc: Document, repair=None) -> LLMResult:
+    def extract(self, doc: Document, repair=None, progress=None) -> LLMResult:
         stem = Path(doc.source).stem
         path = self.dir / f"{stem}.repair.json" if repair else self.dir / f"{stem}.json"
         if repair and not path.exists():

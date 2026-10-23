@@ -11,6 +11,7 @@ as-is and ``responses.parse`` hands back a validated model.
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
 from pathlib import Path
 
 import openai
@@ -53,7 +54,8 @@ class OpenAIExtractor:
         self.model = model
         self.send_pdf = send_pdf
 
-    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None) -> LLMResult:
+    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None,
+                progress: Callable[..., None] | None = None) -> LLMResult:
         try:
             resp = self.client.responses.parse(
                 model=self.model,

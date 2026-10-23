@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from . import heuristics
@@ -19,23 +20,35 @@ def _validate(raw: RawExtraction) -> tuple[Typed, list[Issue]]:
     return typed, issues + check_rules(typed, raw)
 
 
-def _needs_repair(issues: list[Issue]) -> bool:
+def _needs_repair(raw: RawExtraction, issues: list[Issue]) -> bool:
     # Hard errors are model mistakes. Arithmetic mismatches are often a misread digit,
     # so they get one re-read too; if the second read agrees, the document itself is wrong.
+    # Not for a document that isn't a change order: re-reading an invoice can't produce a
+    # CO number, it only spends a second model call.
+    if not raw.is_change_order:
+        return False
     return any(i.severity == "hard" or i.code in ARITHMETIC_CODES for i in issues)
 
 
-def run(path: str | Path, extractor: Extractor, allow_repair: bool = True) -> dict:
+def run(path: str | Path, extractor: Extractor, allow_repair: bool = True,
+        on_step: Callable[..., None] | None = None) -> dict:
+    """``on_step(name, **info)`` is called as each stage starts (read, extract, validate,
+    repair, score), so a caller such as the web UI can show progress."""
+    step = on_step or (lambda name, **info: None)
     t0 = time.perf_counter()
+    step("read")
     doc = load(path)
-    calls: list[LLMResult] = [extractor.extract(doc)]
+    step("extract")
+    calls: list[LLMResult] = [extractor.extract(doc, progress=lambda **info: step("extract", **info))]
     raw = calls[0].extraction
+    step("validate")
     typed, issues = _validate(raw)
 
     repair = None
-    if allow_repair and _needs_repair(issues):
+    if allow_repair and _needs_repair(raw, issues):
         first_codes = sorted(i.code for i in issues)
-        calls.append(extractor.extract(doc, repair=(raw, issues)))
+        step("repair", checks=first_codes)
+        calls.append(extractor.extract(doc, repair=(raw, issues), progress=lambda **info: step("repair", **info)))
         raw2 = calls[-1].extraction
         typed2, issues2 = _validate(raw2)
         n_hard = lambda xs: sum(i.severity == "hard" for i in xs)  # noqa: E731
@@ -47,6 +60,7 @@ def run(path: str | Path, extractor: Extractor, allow_repair: bool = True) -> di
             if i.code in ARITHMETIC_CODES:
                 i.message += " (persisted after re-read: likely an error in the source document)"
 
+    step("score")
     return build_result(doc, raw, typed, issues, calls, repair, time.perf_counter() - t0)
 
 
@@ -64,6 +78,8 @@ def build_result(doc: Document, raw: RawExtraction, typed: Typed, issues: list[I
             "evidence": f.evidence,
             "page": f.page,
             "model_confidence": f.confidence,
+            # Did the independent regex extractor confirm it? None = it had no opinion.
+            "cross_check": heuristics.agrees(name, value, candidates),
             "reasons": reasons,
         }
     li_conf, li_reasons = line_items_confidence(raw, typed, doc, issues)
@@ -76,11 +92,20 @@ def build_result(doc: Document, raw: RawExtraction, typed: Typed, issues: list[I
 
     scores = {k: v["confidence"] for k, v in fields.items()}
     hard = any(i.severity == "hard" for i in issues)
+    doc_conf = document_confidence(scores, raw, hard)
+    if not raw.is_change_order:
+        # Values read from something that isn't a change order (an invoice, a letter) are forced
+        # into change-order slots, so no field may look more trustworthy than the document.
+        for f in fields.values():
+            if f["confidence"] > doc_conf:
+                f["confidence"] = doc_conf
+                f["reasons"].append("capped: the document is not a change order")
+        scores = {k: v["confidence"] for k, v in fields.items()}
     return {
         "source": doc.source,
         "change_order": {k: v["value"] for k, v in fields.items()},
         "fields": fields,
-        "document_confidence": document_confidence(scores, raw, hard),
+        "document_confidence": doc_conf,
         "needs_review": sorted(k for k, s in scores.items() if s < REVIEW_THRESHOLD),
         "issues": [i.model_dump() for i in issues],
         "notes": raw.notes,

@@ -77,6 +77,9 @@ re-reads the document with the failed checks in the prompt; `pipeline.run` keeps
 issues, then fewer issues overall. If an arithmetic mismatch survives, the source document is presumed wrong: values
 are kept **as printed** and the issue message says so. Do not "fix" documents.
 
+**Not a change order.** When the model reports `is_change_order=false`, `pipeline.build_result` caps every
+field's confidence at the document's (0) and `_needs_repair` skips the re-read, which can't help and costs a call.
+
 **Issue severity is load-bearing.** `hard` (unparseable value, missing CO number) triggers repair and caps document
 confidence at 0.5; `soft` only lowers field confidence. Each issue lists the `fields` it involves, and
 `confidence.py` multiplies those fields' scores by `ISSUE_PENALTY` — so `Issue.fields` is how a rule reaches

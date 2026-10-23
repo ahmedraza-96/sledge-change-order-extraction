@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import json
+import queue
 import re
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
-from . import pipeline
+from . import locate, pipeline
 from .cli import SUFFIXES
 from .extract import ExtractionError, FixtureExtractor
 from .ingest import load
 from .providers import DEFAULT_MODELS, Provider, has_key, make_extractor
+
+_MAP_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="field-map")
 
 STATIC = Path(__file__).parent / "static"
 # Demo mode replays the recorded LLM output the tests use, so it needs no key —
@@ -21,6 +27,7 @@ STATIC = Path(__file__).parent / "static"
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 SAMPLES = {p.stem: p for p in sorted((FIXTURES / "docs").glob("*.txt"))}
 DEMO = "demo"
+AUTO_ORDER = (Provider.openrouter, Provider.gemini, Provider.claude, Provider.openai)
 LABELS = {Provider.claude: "Claude", Provider.gemini: "Gemini", Provider.openai: "OpenAI",
           Provider.openrouter: "OpenRouter (free models)"}
 
@@ -52,15 +59,37 @@ def sample(name: str) -> str:
     return SAMPLES[name].read_text(encoding="utf-8")
 
 
-@app.post("/api/extract")
-def extract(
-    provider: str = Form(...),
-    model: str | None = Form(None),
-    text: str | None = Form(None),
-    name: str | None = Form(None),
-    file: UploadFile | None = File(None),
-) -> dict:
-    # A sync handler, so FastAPI runs it in a threadpool: the pipeline blocks on the LLM call.
+class _Job:
+    """A validated request: what to read and which extractor reads it."""
+
+    def __init__(self, filename: str, data: bytes, extractor, provider: str):
+        self.filename, self.data, self.extractor, self.provider = filename, data, extractor, provider
+
+    def run(self, on_step=None) -> dict:
+        step = on_step or (lambda name, **info: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / self.filename
+            path.write_bytes(self.data)
+            doc = load(path)
+            # Word positions for the field map. On scans and photos this is OCR (~16 s/page), so it
+            # runs while the model call (usually longer) is in flight instead of after it.
+            layout = _MAP_POOL.submit(locate.layout, doc)
+            try:
+                result = pipeline.run(path, self.extractor, on_step=on_step)
+            except ExtractionError as e:
+                if self.provider == DEMO:
+                    raise ExtractionError(f"Demo mode only has recorded output for the sample documents "
+                                          f"({', '.join(SAMPLES)}). {e}") from e
+                raise
+            step("map", ocr=bool(doc.scanned_pages))
+            result["preview"] = locate.preview(layout.result(), result["fields"])
+        result["source"] = self.filename  # not the temp path
+        return result
+
+
+def _job(provider: str | None, model: str | None, text: str | None, name: str | None,
+         file: UploadFile | None) -> _Job:
+    """Check the request before any work starts; problems become a 400."""
     if file is not None and file.filename:
         filename = Path(file.filename).name
         data = file.file.read()
@@ -73,30 +102,65 @@ def extract(
     if Path(filename).suffix.lower() not in SUFFIXES:
         raise HTTPException(400, f"Unsupported file type; use one of {', '.join(sorted(SUFFIXES))}.")
 
+    if provider is None:
+        # The UI doesn't ask: use the first provider that has a key, free OpenRouter first.
+        provider = next((p.value for p in AUTO_ORDER if has_key(p)), None)
+        if provider is None:
+            raise HTTPException(400, "No model is configured. Add OPENROUTER_API_KEY to the .env file and restart.")
     if provider == DEMO:
-        ex = FixtureExtractor(FIXTURES / "llm")
-    else:
-        try:
-            p = Provider(provider)
-        except ValueError:
-            raise HTTPException(400, f"Unknown provider {provider!r}.") from None
-        if not has_key(p):
-            raise HTTPException(400, f"No API key for {LABELS[p]} — set it in .env.")
-        ex = make_extractor(p, model=(model or "").strip() or None)
+        return _Job(filename, data, FixtureExtractor(FIXTURES / "llm"), provider)
+    try:
+        p = Provider(provider)
+    except ValueError:
+        raise HTTPException(400, f"Unknown provider {provider!r}.") from None
+    if not has_key(p):
+        raise HTTPException(400, f"No API key for {LABELS[p]} — set it in .env.")
+    return _Job(filename, data, make_extractor(p, model=(model or "").strip() or None), provider)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / filename
-        path.write_bytes(data)
+
+@app.post("/api/extract")
+def extract(
+    provider: str | None = Form(None),
+    model: str | None = Form(None),
+    text: str | None = Form(None),
+    name: str | None = Form(None),
+    file: UploadFile | None = File(None),
+) -> dict:
+    # A sync handler, so FastAPI runs it in a threadpool: the pipeline blocks on the LLM call.
+    job = _job(provider, model, text, name, file)
+    try:
+        return job.run()
+    except ExtractionError as e:
+        raise HTTPException(502, str(e)) from e
+
+
+@app.post("/api/extract/stream")
+def extract_stream(
+    provider: str | None = Form(None),
+    model: str | None = Form(None),
+    text: str | None = Form(None),
+    name: str | None = Form(None),
+    file: UploadFile | None = File(None),
+) -> StreamingResponse:
+    """Same as /api/extract, but streams progress as newline-delimited JSON:
+    ``{"step": "extract"}`` … then ``{"result": {...}}`` or ``{"error": "..."}``."""
+    job = _job(provider, model, text, name, file)
+    events: queue.Queue = queue.Queue()
+
+    def work():
         try:
-            result = pipeline.run(path, ex)
+            events.put({"result": job.run(on_step=lambda name, **info: events.put({"step": name, **info}))})
         except ExtractionError as e:
-            msg = str(e)
-            if provider == DEMO:
-                msg = (f"Demo mode only has recorded output for the sample documents "
-                       f"({', '.join(SAMPLES)}). {msg}")
-            raise HTTPException(502, msg) from e
-        # The page text the evidence quotes were checked against, so the UI can highlight them.
-        doc = load(path)
-    result["source"] = filename  # not the temp path
-    result["document"] = {"kind": doc.kind, "pages": doc.pages, "scanned_pages": doc.scanned_pages}
-    return result
+            events.put({"error": str(e)})
+        except Exception as e:  # report it to the page instead of dropping the stream
+            events.put({"error": f"Unexpected error: {e}"})
+        finally:
+            events.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def stream():
+        while (event := events.get()) is not None:
+            yield json.dumps(event) + "\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")

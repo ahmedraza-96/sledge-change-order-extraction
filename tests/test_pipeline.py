@@ -379,17 +379,24 @@ def test_multipage_tiff_becomes_multipage_pdf(tmp_path):
 
 
 def _mock_openrouter_client(captured: list, payload: dict | None, status: int = 200, finish_reason="stop",
-                            error: dict | None = None, served_by="nvidia/nemotron-3.5-super-vl:free") -> openai.OpenAI:
+                            error: dict | None = None, served_by="nvidia/nemotron-3.5-super-vl:free",
+                            reasoning=("Let me read the change order.", " The total is on line 17.")) -> openai.OpenAI:
+    """OpenRouter as the SDK sees it when streaming: SSE chunks of reasoning, then the JSON in pieces."""
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(json.loads(request.content))
         if error is not None:
             return httpx.Response(status, json={"error": error})
-        return httpx.Response(200, json={
-            "id": "gen-test", "object": "chat.completion", "created": 0, "model": served_by,
-            "choices": [{"index": 0, "finish_reason": finish_reason, "message": {
-                "role": "assistant", "content": json.dumps(payload) if payload is not None else None, "refusal": None}}],
-            "usage": {"prompt_tokens": 1234, "completion_tokens": 567, "total_tokens": 1801},
-        })
+        base = {"id": "gen-test", "object": "chat.completion.chunk", "created": 0, "model": served_by}
+        chunks = [{**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "", "reasoning": r}}]}
+                  for r in reasoning]
+        content = json.dumps(payload) if payload is not None else ""
+        size = max(1, len(content) // 6)
+        chunks += [{**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": content[i:i + size]}}]}
+                   for i in range(0, len(content), size)]
+        chunks.append({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}]})
+        chunks.append({**base, "choices": [], "usage": {"prompt_tokens": 1234, "completion_tokens": 567, "total_tokens": 1801}})
+        body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+        return httpx.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
     return openai.OpenAI(api_key="test", base_url="https://openrouter.ai/api/v1",
                          http_client=httpx.Client(transport=httpx.MockTransport(handler)), max_retries=0)
 
@@ -472,3 +479,67 @@ def test_image_is_sent_to_the_model(tmp_path):
     blocks = captured[0]["messages"][0]["content"]
     assert blocks[0]["type"] == "document"  # the model reads the page image itself
     assert "no text layer" in blocks[-1]["text"]
+
+
+def test_fields_report_the_regex_cross_check():
+    r = pipeline.run(FIX / "docs" / "simple_co.txt", FixtureExtractor(FIX / "llm"))
+    assert r["fields"]["revised_contract_sum"]["cross_check"] is True   # "Contract Sum including this Change Order"
+    assert r["fields"]["project_name"]["cross_check"] is None           # no regex for it
+    misread = pipeline.run(FIX / "docs" / "misread_co.txt", FixtureExtractor(FIX / "llm"), allow_repair=False)
+    assert misread["fields"]["change_order_number"]["cross_check"] is True
+
+
+class _Replay:
+    """Extractor returning a fixed RawExtraction, counting calls."""
+
+    def __init__(self, extraction: RawExtraction):
+        self.extraction, self.calls = extraction, 0
+
+    def extract(self, doc, repair=None, progress=None) -> LLMResult:
+        self.calls += 1
+        return LLMResult(extraction=self.extraction, model="replay")
+
+
+def test_not_a_change_order_caps_every_field_and_skips_repair():
+    # What a model returns for an invoice: no CO number (a hard issue), values in CO slots.
+    invoice = raw(is_change_order=False, change_order_number=None, contractor="BRIGHTWATER ELECTRIC SUPPLY")
+    ex = _Replay(invoice)
+    r = pipeline.run(FIX / "docs" / "simple_co.txt", ex)
+    assert ex.calls == 1  # no re-read: it can't turn an invoice into a change order
+    assert r["document_confidence"] == 0
+    assert all(f["confidence"] <= r["document_confidence"] for f in r["fields"].values())
+    assert "capped: the document is not a change order" in r["fields"]["contractor"]["reasons"]
+    assert "not_a_change_order" in {i["code"] for i in r["issues"]}
+
+
+def test_change_order_fields_are_not_capped():
+    r = pipeline.run(FIX / "docs" / "simple_co.txt", FixtureExtractor(FIX / "llm"))
+    assert r["fields"]["contractor"]["confidence"] > 0.9
+
+
+def test_openrouter_reports_live_progress(monkeypatch):
+    from co_extract import openrouter
+
+    monkeypatch.setattr(openrouter._Progress, "INTERVAL", 0)  # report every thinking chunk
+    events: list = []
+    ex = OpenRouterExtractor(client=_mock_openrouter_client([], GOOD))
+    ex.extract(load(FIX / "docs" / "simple_co.txt"), progress=lambda **info: events.append(info))
+    phases = [e["phase"] for e in events]
+    assert phases[0] == "thinking" and events[0]["words"] > 0
+    first_writing = phases.index("writing")
+    assert "thinking" not in phases[first_writing:]
+    found = [e["found"] for e in events if e["phase"] == "writing"]
+    assert found == sorted(found) and found[-1] == 22 and events[-1]["total"] == 22
+
+
+def test_openrouter_streams_without_a_progress_callback():
+    ex = OpenRouterExtractor(client=_mock_openrouter_client([], GOOD, reasoning=()))
+    r = ex.extract(load(FIX / "docs" / "simple_co.txt"))
+    assert r.extraction.total_change_amount.value == GOOD["total_change_amount"]["value"]
+
+
+def test_pipeline_forwards_model_progress_as_steps():
+    steps: list = []
+    pipeline.run(FIX / "docs" / "simple_co.txt", OpenRouterExtractor(client=_mock_openrouter_client([], GOOD)),
+                 on_step=lambda name, **info: steps.append((name, info.get("phase"))))
+    assert steps.index(("extract", None)) < steps.index(("extract", "writing")) < steps.index(("validate", None))

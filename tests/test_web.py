@@ -77,11 +77,50 @@ def test_image_upload_accepted(client):
     assert "Demo mode only has recorded output" in r.json()["detail"]
 
 
-def test_extract_returns_document_text_for_highlighting(client):
+def test_extract_returns_field_map(client):
     doc = (FIX / "docs" / "simple_co.txt").read_bytes()
     body = client.post("/api/extract", data={"provider": "demo"},
                        files={"file": ("simple_co.txt", doc, "text/plain")}).json()
-    assert body["document"]["kind"] == "text"
-    # Every grounded evidence quote can be found in the returned page text.
-    page = body["document"]["pages"][0]
-    assert body["fields"]["change_order_number"]["evidence"] in page
+    pv = body["preview"]
+    assert pv["pages"][0]["image"].startswith("data:image/png;base64,")
+    # Every field with a quote is either circled or listed with the reason it isn't.
+    quoted = {k for k, f in body["fields"].items() if k != "line_items" and f["evidence"]}
+    assert quoted <= set(pv["marks"]) | set(pv["missing"])
+    assert pv["marks"]["total_change_amount"]["scope"] == "value"
+
+
+def test_provider_is_picked_automatically(client, monkeypatch):
+    picked = []
+    monkeypatch.setattr(web, "has_key", lambda p: p is web.Provider.gemini)
+    monkeypatch.setattr(web, "make_extractor", lambda p, model=None: picked.append(p) or web.FixtureExtractor(FIX / "llm"))
+    doc = (FIX / "docs" / "simple_co.txt").read_bytes()
+    r = client.post("/api/extract", files={"file": ("simple_co.txt", doc, "text/plain")})
+    assert r.status_code == 200 and picked == [web.Provider.gemini]
+
+
+def test_no_configured_provider_explains_how_to_fix(client, monkeypatch):
+    monkeypatch.setattr(web, "has_key", lambda p: False)
+    r = client.post("/api/extract", data={"text": "CHANGE ORDER No. 9"})
+    assert r.status_code == 400 and "OPENROUTER_API_KEY" in r.json()["detail"]
+
+
+def test_stream_reports_real_steps_then_the_result(client):
+    import json
+
+    doc = (FIX / "docs" / "misread_co.txt").read_bytes()
+    r = client.post("/api/extract/stream", data={"provider": "demo"},
+                    files={"file": ("misread_co.txt", doc, "text/plain")})
+    events = [json.loads(line) for line in r.text.splitlines()]
+    steps = [e["step"] for e in events if "step" in e]
+    # misread_co fails its checks on the first read, so the repair step appears.
+    assert steps == ["read", "extract", "validate", "repair", "score", "map"]
+    assert events[[e.get("step") for e in events].index("repair")]["checks"]
+    assert "result" in events[-1] and events[-1]["result"]["preview"]["marks"]
+
+
+def test_stream_reports_extraction_errors(client):
+    import json
+
+    r = client.post("/api/extract/stream", data={"provider": "demo", "text": "CHANGE ORDER No. 9"})
+    events = [json.loads(line) for line in r.text.splitlines()]
+    assert "Demo mode only has recorded output" in events[-1]["error"]

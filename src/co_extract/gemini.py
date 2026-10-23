@@ -12,6 +12,8 @@ directly; the SDK inlines the ``$ref``s pydantic emits for the 21 repeated
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import httpx
 from google import genai
 from google.genai import errors, types
@@ -91,7 +93,8 @@ class GeminiExtractor:
                              if self.thinking_level else None),
         )
 
-    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None) -> LLMResult:
+    def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None,
+                progress: Callable[..., None] | None = None) -> LLMResult:
         try:
             resp = self.client.models.generate_content(
                 model=self.model,
