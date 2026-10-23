@@ -1,0 +1,92 @@
+# Test, build, and deploy to the EC2 instance on every push to main.
+#
+# No long-lived AWS keys: GitHub gets short-lived credentials through an IAM role (OIDC) that
+# trusts only this repository's main branch. The image goes to ECR, then SSM Run Command tells
+# the instance to pull it and restart the container. API keys live only on the instance, in
+# /opt/co-extract/.env. One-time AWS setup: see deploy/README.md.
+#
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   AWS_REGION, AWS_ROLE_ARN, ECR_REPOSITORY, EC2_INSTANCE_ID, APP_PORT (optional, default 8000)
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Offline tests (no API keys; live tests are deselected by default)
+        run: |
+          uv sync
+          uv run pytest
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # for the OIDC token GitHub exchanges for AWS credentials
+      contents: read
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+      APP_PORT: ${{ vars.APP_PORT || '8000' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          docker build -t "$REGISTRY/$REPOSITORY:$IMAGE_TAG" -t "$REGISTRY/$REPOSITORY:latest" .
+          docker push "$REGISTRY/$REPOSITORY:$IMAGE_TAG"
+          docker push "$REGISTRY/$REPOSITORY:latest"
+          echo "IMAGE=$REGISTRY/$REPOSITORY:$IMAGE_TAG" >> "$GITHUB_ENV"
+          echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
+
+      - name: Deploy on EC2 through SSM
+        run: |
+          set -euo pipefail
+          # Pull the new image and swap the container. The instance's own role reads from ECR.
+          COMMANDS=$(jq -cn --arg reg "$REGISTRY" --arg img "$IMAGE" --arg region "${{ vars.AWS_REGION }}" --arg port "$APP_PORT" '[
+            "set -e",
+            "test -f /opt/co-extract/.env || { echo \"missing /opt/co-extract/.env (see deploy/README.md)\"; exit 1; }",
+            "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($reg)",
+            "docker pull \($img)",
+            "docker rm -f co-extract 2>/dev/null || true",
+            "docker run -d --name co-extract --restart unless-stopped -p \($port):8000 --env-file /opt/co-extract/.env \($img)",
+            "docker image prune -af --filter until=168h || true"
+          ]')
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name AWS-RunShellScript \
+            --comment "co-extract ${IMAGE_TAG:0:7}" \
+            --parameters "commands=$COMMANDS" \
+            --query Command.CommandId --output text)
+          echo "SSM command $CMD_ID"
+          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "${{ vars.EC2_INSTANCE_ID }}" || true
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --query '{status:Status,out:StandardOutputContent,err:StandardErrorContent}' --output json
+          STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "${{ vars.EC2_INSTANCE_ID }}" --query Status --output text)
+          test "$STATUS" = "Success"
