@@ -1,0 +1,17 @@
+FROM: Apex Mechanical Contractors
+TO:   Riverbend Medical Center (Owner)
+RE:   Change Order No. 14 -- Riverbend MOB Expansion, Job 23-0417
+DATE: 08/19/2026
+
+Per RFI-88 the existing chilled water main was found undersized during tie-in (unforeseen condition).
+Scope: upsize CHW main from 4" to 6" between Grid B and Grid F, incl. new isolation valves.
+
+  6" CHW pipe, furnish & install ......... 140 LF @ $96.00   =  $13,440.00
+  6" butterfly isolation valves ..........   4 EA @ $1,275.00 =   $5,100.00
+  Subtotal .............................................       $18,540.00
+  Markup 15% ...........................................        $2,781.00
+  TOTAL THIS CO ........................................       $21,321.00
+
+Original contract sum $2,875,000.00; prior COs $143,600.00; revised contract sum $3,039,921.00.
+Schedule: add 6 working days. New substantial completion 12/11/2026.
+Status: pending owner signature. Signed for Apex: R. Delgado

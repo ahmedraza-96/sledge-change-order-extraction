@@ -21,7 +21,7 @@ def test_index_served(client):
 
 def test_providers_list_includes_demo(client):
     ids = {p["id"]: p for p in client.get("/api/providers").json()}
-    assert set(ids) == {"claude", "gemini", "openai", "demo"}
+    assert set(ids) == {"claude", "gemini", "openai", "openrouter", "demo"}
     assert ids["demo"]["available"]
 
 

@@ -1,0 +1,19 @@
+BLUESTONE BUILDERS -- FIELD OFFICE
+CHNAGE ORDR # CO-14
+PROJ: cedar ridge medical clinic   job no CR-3307
+TO: Cedar Ridge Health (owner)
+dated 3/4/26
+
+WORK: owner asked us to add 2 dedicated 20A circuits + data drops in exam rms 4 and 5
+
+  new 20A circuit incl wire/conduit   2 ea @ 1,180.00 = 2360.00
+  cat6 data drop                      4 ea @ 265.00   = $1,060.00
+
+subtotal 3,420.00
+markup 15%  513.00
+TOTAL ADD THIS CO: $3,933.00
+
+orig contract sum 1,480,000.00 / prev CO's net 18,900.00 / new contract sum $1,502,833.00
+time: +2 days, substantial completion now March 18th... CORRECTION june 18th, 2026
+
+APPROVED -- signed B. Stone (contractor) 3/5/26, signed M. Huang (owner) 3/6/26

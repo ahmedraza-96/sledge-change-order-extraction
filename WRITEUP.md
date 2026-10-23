@@ -149,13 +149,18 @@ provider replays the recorded fixtures so it works without any API key.
 Extraction sits behind an `Extractor` protocol, and everything after it — normalization, the
 validation rules, the repair pass, confidence scoring — is provider-independent, because it all
 operates on the `RawExtraction` schema rather than on a provider's response. So testing a cheaper
-model against this same eval is a matter of adding one module. There are three today: Claude
-(`extract.py`), Gemini (`gemini.py`) and OpenAI (`openai_extractor.py`, Responses API in strict
-structured-output mode).
+model against this same eval is a matter of adding one module. There are four today: Claude
+(`extract.py`), Gemini (`gemini.py`), OpenAI (`openai_extractor.py`, Responses API in strict
+structured-output mode) and OpenRouter (`openrouter.py`). The OpenRouter backend uses free models
+only: `nvidia/nemotron-3.5-super-vl:free`, picked because it is the free model that both reads images
+and enforces a JSON schema *and* has published document-reading results, with two free fallbacks
+that OpenRouter switches to when it is rate-limited. PDF pages go to it as rendered images rather
+than as a PDF, because OpenRouter's PDF handling can route through a paid OCR engine.
 
 ```bash
 uv run co-extract eval --provider gemini     # -> reports/eval-gemini.md
 uv run co-extract eval --provider openai     # -> reports/eval-openai.md
+uv run co-extract eval --provider openrouter # -> reports/eval-openrouter.md
 ```
 
 All providers send byte-identical prompt text (the shared `document_prompt` / `repair_prompt`

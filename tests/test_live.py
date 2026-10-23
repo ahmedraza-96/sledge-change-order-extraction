@@ -15,6 +15,7 @@ from co_extract.evaluate import field_correct, load_truths
 from co_extract.extract import ClaudeExtractor
 from co_extract.gemini import GeminiExtractor
 from co_extract.openai_extractor import OpenAIExtractor
+from co_extract.openrouter import OpenRouterExtractor
 
 ROOT = Path(__file__).parent.parent
 pytestmark = pytest.mark.live
@@ -23,6 +24,7 @@ PROVIDERS = {
     "claude": ("ANTHROPIC_API_KEY", ClaudeExtractor),
     "gemini": ("GEMINI_API_KEY", GeminiExtractor),
     "openai": ("OPENAI_API_KEY", OpenAIExtractor),
+    "openrouter": ("OPENROUTER_API_KEY", OpenRouterExtractor),
 }
 
 

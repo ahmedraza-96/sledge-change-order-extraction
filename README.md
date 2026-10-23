@@ -9,7 +9,7 @@ See **[WRITEUP.md](WRITEUP.md)** for the approach, how confidence is computed, a
 
 ```bash
 uv sync                         # add `--extra ocr` to OCR scanned PDFs with Docling (large download)
-cp .env.example .env            # add ANTHROPIC_API_KEY, GEMINI_API_KEY and/or OPENAI_API_KEY
+cp .env.example .env            # add OPENROUTER_API_KEY (free), ANTHROPIC_API_KEY, GEMINI_API_KEY and/or OPENAI_API_KEY
 uv run python scripts/gen_dataset.py                      # generates data/samples + data/truth (not committed)
 uv run co-extract extract data/samples/03_credit.pdf      # JSON to stdout
 uv run co-extract extract data/samples -o out/            # a whole folder
@@ -21,9 +21,19 @@ uv run pytest -m live                                     # real API calls, per 
 
 ### Providers
 
-Extraction runs against Claude (default), Gemini or OpenAI; everything after the model call —
+Extraction runs against Claude (default), Gemini, OpenAI or OpenRouter's free models; everything after the model call —
 normalization, validation, the repair pass, confidence scoring — is shared, so the two are directly
 comparable on the same eval. OpenAI defaults to `gpt-5-mini` (`--provider openai`).
+
+**OpenRouter (free).** `--provider openrouter` uses free models only, chosen from the free models
+that accept images *and* enforce a JSON schema: `nvidia/nemotron-3.5-super-vl:free` (the only one
+with published document/OCR results), falling back to `dots-studio/dots-3-note-preview:free` and
+then the text-only `nvidia/nemotron-3-super-120b-a12b:free` when a model is rate-limited or down.
+`meta.model` records which one answered. PDF pages are sent as rendered images, so no paid
+PDF-parsing engine is involved. Free limits: 20 requests/min and 50/day (1000/day once $10 of
+credit has been bought). If every request fails with a 404, allow free-model providers in
+https://openrouter.ai/settings/privacy. Free endpoints may log prompts, so don't send confidential
+documents through them.
 
 ```bash
 uv run co-extract extract data/samples/03_credit.pdf --provider gemini

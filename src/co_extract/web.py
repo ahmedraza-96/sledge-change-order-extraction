@@ -20,7 +20,8 @@ STATIC = Path(__file__).parent / "static"
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 SAMPLES = {p.stem: p for p in sorted((FIXTURES / "docs").glob("*.txt"))}
 DEMO = "demo"
-LABELS = {Provider.claude: "Claude", Provider.gemini: "Gemini", Provider.openai: "OpenAI"}
+LABELS = {Provider.claude: "Claude", Provider.gemini: "Gemini", Provider.openai: "OpenAI",
+          Provider.openrouter: "OpenRouter (free models)"}
 
 app = FastAPI(title="co-extract")
 

@@ -18,7 +18,9 @@ uv run co-extract serve                    # web UI (FastAPI) on http://127.0.0.
 ```
 
 `--provider` defaults to `claude` (`ANTHROPIC_API_KEY`); `gemini` needs `GEMINI_API_KEY` and defaults to
-`gemini-3.5-flash`; `openai` needs `OPENAI_API_KEY` and defaults to `gpt-5-mini`. Gemini Pro models need billing enabled — on the free tier they report quota `limit: 0`.
+`gemini-3.5-flash`; `openai` needs `OPENAI_API_KEY` and defaults to `gpt-5-mini`; `openrouter` needs
+`OPENROUTER_API_KEY` and uses free models only (`openrouter.py`: primary + `OPENROUTER_FALLBACKS`, all `:free` —
+OpenRouter bills a paid fallback at its own rate, so never add one). Gemini Pro models need billing enabled — on the free tier they report quota `limit: 0`.
 
 The free Gemini tier caps flash at ~5 requests/min **and ~20/day**, which is less than one full eval, so use
 `--resume` to spread a run across quota windows (it reuses cached documents and only calls for the rest).
@@ -51,7 +53,8 @@ means touching `FIELD_SPECS`, `FIELD_GUIDE` and the `RawExtraction` body — a m
 **Extraction is behind a Protocol.** `extract.Extractor` has four implementations: `ClaudeExtractor`
 (`client.beta.messages.parse` with `output_format=RawExtraction`), `GeminiExtractor` in `gemini.py`
 (`client.models.generate_content` with `response_schema=RawExtraction`), `OpenAIExtractor` in
-`openai_extractor.py` (`client.responses.parse` with `text_format=RawExtraction`, strict mode), and `FixtureExtractor`, which replays
+`openai_extractor.py` (`client.responses.parse` with `text_format=RawExtraction`, strict mode), `OpenRouterExtractor` in
+`openrouter.py` (OpenAI SDK against OpenRouter, `chat.completions.parse`, PDF pages sent as PNGs), and `FixtureExtractor`, which replays
 `tests/fixtures/llm/<stem>.json` (and `<stem>.repair.json` for the repair pass). `providers.make_extractor` builds one by name for both
 the CLI and the web app (`web.py` + `static/index.html`, whose Demo option is the fixture path). Every test and offline demo goes
 through the fixture path; never add a code path that only works with a live client. Scanned PDFs (or `send_pdf=True`)
@@ -59,7 +62,7 @@ attach the PDF bytes alongside the page-tagged text.
 
 **The prompt is provider-neutral and must stay that way.** `SYSTEM_PROMPT`, `document_prompt()` and
 `repair_prompt()` live in `extract.py`; each provider only wraps that text in its own content format
-(`build_content` for Anthropic blocks, `build_parts` for Gemini parts, `build_input` for OpenAI input items). The eval is a provider comparison, so any
+(`build_content` for Anthropic blocks, `build_parts` for Gemini parts, `build_input` for OpenAI input items, `build_messages` for OpenRouter). The eval is a provider comparison, so any
 prompt change must go in the shared helpers — `test_all_providers_send_identical_prompt_text` pins this.
 `LLMResult.provider` flows into `meta.provider` so a cached run self-identifies, and eval caches and reports are
 scoped per provider (`reports/runs/<provider>/`, `reports/eval-<provider>.md`) — a shared cache would let one

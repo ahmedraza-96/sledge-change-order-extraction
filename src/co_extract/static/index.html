@@ -148,7 +148,8 @@ async function loadProviders() {
   const list = await (await fetch("/api/providers")).json();
   const sel = $("provider");
   sel.innerHTML = list.map((p) => `<option value="${p.id}" data-model="${esc(p.default_model)}" ${p.available ? "" : "disabled"}>${esc(p.label)}${p.available ? "" : " — no API key"}</option>`).join("");
-  const first = list.find((p) => p.available && p.id !== "demo") || list.find((p) => p.available);
+  const first = list.find((p) => p.available && p.id === "openrouter")
+    || list.find((p) => p.available && p.id !== "demo") || list.find((p) => p.available);
   if (first) sel.value = first.id;
   sel.onchange = () => { $("model").placeholder = sel.selectedOptions[0].dataset.model; };
   sel.onchange();

@@ -16,6 +16,7 @@ from co_extract.extract import ClaudeExtractor, ExtractionError, FixtureExtracto
 from co_extract.gemini import GeminiExtractor
 from co_extract.ingest import load
 from co_extract.openai_extractor import OpenAIExtractor
+from co_extract.openrouter import OpenRouterExtractor
 from co_extract.schema import RawExtraction
 from co_extract.validate import check_rules, normalize_extraction
 
@@ -187,13 +188,15 @@ def test_gemini_extractor_request_and_parse():
 def test_all_providers_send_identical_prompt_text():
     """The eval comparison is only meaningful if every provider sees the same words."""
     doc = load(FIX / "docs" / "simple_co.txt")
-    claude, gemini, oai = [], [], []
+    claude, gemini, oai, orr = [], [], [], []
     ClaudeExtractor(client=_mock_client(claude, GOOD)).extract(doc)
     GeminiExtractor(client=_mock_gemini_client(gemini, GOOD)).extract(doc)
     OpenAIExtractor(client=_mock_openai_client(oai, GOOD)).extract(doc)
-    assert claude[0]["system"] == gemini[0]["systemInstruction"]["parts"][0]["text"] == oai[0]["instructions"]
+    OpenRouterExtractor(client=_mock_openrouter_client(orr, GOOD)).extract(doc)
+    assert (claude[0]["system"] == gemini[0]["systemInstruction"]["parts"][0]["text"] == oai[0]["instructions"]
+            == orr[0]["messages"][0]["content"])
     assert (claude[0]["messages"][0]["content"][-1]["text"] == gemini[0]["contents"][0]["parts"][-1]["text"]
-            == oai[0]["input"][0]["content"][-1]["text"])
+            == oai[0]["input"][0]["content"][-1]["text"] == orr[0]["messages"][1]["content"][-1]["text"])
 
 
 def test_gemini_extractor_sends_pdf_for_scanned(tmp_path):
@@ -429,3 +432,90 @@ def test_image_goes_through_ocr_and_is_sent_to_the_model(tmp_path, monkeypatch):
     captured: list = []
     ClaudeExtractor(client=_mock_client(captured, GOOD), send_pdf=False).extract(doc)
     assert captured[0]["messages"][0]["content"][0]["type"] == "document"
+
+
+def _mock_openrouter_client(captured: list, payload: dict | None, status: int = 200, finish_reason="stop",
+                            error: dict | None = None, served_by="nvidia/nemotron-3.5-super-vl:free") -> openai.OpenAI:
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        if error is not None:
+            return httpx.Response(status, json={"error": error})
+        return httpx.Response(200, json={
+            "id": "gen-test", "object": "chat.completion", "created": 0, "model": served_by,
+            "choices": [{"index": 0, "finish_reason": finish_reason, "message": {
+                "role": "assistant", "content": json.dumps(payload) if payload is not None else None, "refusal": None}}],
+            "usage": {"prompt_tokens": 1234, "completion_tokens": 567, "total_tokens": 1801},
+        })
+    return openai.OpenAI(api_key="test", base_url="https://openrouter.ai/api/v1",
+                         http_client=httpx.Client(transport=httpx.MockTransport(handler)), max_retries=0)
+
+
+def test_openrouter_extractor_request_and_parse():
+    captured: list = []
+    ex = OpenRouterExtractor(client=_mock_openrouter_client(captured, GOOD))
+    r = pipeline.run(FIX / "docs" / "simple_co.txt", ex)
+    assert r["change_order"]["total_change_amount"] == "3850.00"
+    assert r["meta"]["provider"] == "openrouter"
+    assert r["meta"]["model"] == "nvidia/nemotron-3.5-super-vl:free"
+    assert r["meta"]["input_tokens"] == 1234
+    body = captured[0]
+    assert body["model"] == "nvidia/nemotron-3.5-super-vl:free"
+    # Fallbacks follow the primary, and only schema-honouring providers may serve the request.
+    assert body["models"][0] == body["model"] and len(body["models"]) == 3
+    assert body["provider"] == {"require_parameters": True}
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["strict"] is True
+    assert "<document" in body["messages"][1]["content"][-1]["text"]
+
+
+def test_openrouter_records_which_fallback_answered():
+    ex = OpenRouterExtractor(client=_mock_openrouter_client([], GOOD, served_by="dots-studio/dots-3-note-preview:free"))
+    assert ex.extract(load(FIX / "docs" / "simple_co.txt")).model == "dots-studio/dots-3-note-preview:free"
+
+
+def test_openrouter_model_override_is_not_duplicated_in_fallbacks():
+    captured: list = []
+    ex = OpenRouterExtractor(client=_mock_openrouter_client(captured, GOOD), model="dots-studio/dots-3-note-preview:free")
+    ex.extract(load(FIX / "docs" / "simple_co.txt"))
+    assert captured[0]["models"].count("dots-studio/dots-3-note-preview:free") == 1
+
+
+def test_openrouter_sends_pages_as_images(tmp_path):
+    captured: list = []
+    OpenRouterExtractor(client=_mock_openrouter_client(captured, GOOD), send_pdf=False).extract(load(_blank_pdf(tmp_path)))
+    parts = captured[0]["messages"][1]["content"]
+    assert parts[0]["type"] == "image_url"
+    assert parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert "no text layer" in parts[-1]["text"]
+
+
+def test_openrouter_repair_pass_sends_failed_checks():
+    misread = json.loads((FIX / "llm" / "misread_co.json").read_text())
+    captured: list = []
+    r = pipeline.run(FIX / "docs" / "misread_co.txt", OpenRouterExtractor(client=_mock_openrouter_client(captured, misread)))
+    assert r["meta"]["llm_calls"] == 2
+    assert "A previous extraction of this document failed validation" in captured[1]["messages"][1]["content"][-1]["text"]
+
+
+@pytest.mark.parametrize("kwargs,match", [
+    ({"status": 429, "error": {"message": "Rate limit exceeded: free-models-per-day", "code": 429}}, "rate limited.*free-models-per-day"),
+    ({"status": 401, "error": {"message": "No auth credentials found", "code": 401}}, "API error 401"),
+    ({"status": 404, "error": {"message": "No endpoints found matching your data policy", "code": 404}}, "settings/privacy"),
+    ({"finish_reason": "length"}, "truncated"),
+])
+def test_openrouter_errors(kwargs, match):
+    ex = OpenRouterExtractor(client=_mock_openrouter_client([], GOOD, **kwargs))
+    with pytest.raises(ExtractionError, match=match):
+        ex.extract(load(FIX / "docs" / "simple_co.txt"))
+
+
+def test_openrouter_schema_drift_is_an_extraction_error():
+    ex = OpenRouterExtractor(client=_mock_openrouter_client([], {"is_change_order": True}))
+    with pytest.raises(ExtractionError, match="does not match the schema"):
+        ex.extract(load(FIX / "docs" / "simple_co.txt"))
+
+
+def test_openrouter_missing_key_is_reported(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ExtractionError, match="OPENROUTER_API_KEY"):
+        OpenRouterExtractor()
