@@ -1,4 +1,9 @@
-"""LLM extraction step (Claude, structured outputs)."""
+"""LLM extraction step.
+
+Holds the ``Extractor`` protocol, the prompt (shared by every provider), the Claude
+backend and the offline fixture replayer. The Gemini backend lives in ``gemini.py``
+and reuses the prompt helpers here, so both providers send identical text.
+"""
 
 from __future__ import annotations
 
@@ -51,6 +56,7 @@ class ExtractionError(RuntimeError):
 class LLMResult:
     extraction: RawExtraction
     model: str
+    provider: str = "fixture"
     input_tokens: int = 0
     output_tokens: int = 0
     notes: list[str] = field(default_factory=list)
@@ -60,32 +66,44 @@ class Extractor(Protocol):
     def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None) -> LLMResult: ...
 
 
-def build_content(doc: Document, send_pdf: bool, repair: tuple[RawExtraction, list[Issue]] | None) -> list[dict]:
-    content: list[dict] = []
-    if doc.pdf_bytes and (send_pdf or doc.is_scanned):
-        content.append({
-            "type": "document",
-            "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(doc.pdf_bytes).decode()},
-        })
+def wants_pdf(doc: Document, send_pdf: bool) -> bool:
+    """Attach the PDF when asked to, and always for scans — their text is missing or OCR'd."""
+    return bool(doc.pdf_bytes) and (send_pdf or doc.is_scanned or bool(doc.ocr_pages))
+
+
+def document_prompt(doc: Document) -> str:
+    """The user-turn text. Provider-neutral: both backends must send exactly this."""
     note = ""
     if doc.is_scanned:
         note = (f"Pages {doc.scanned_pages} have no text layer (scanned). Read them from the attached PDF; "
                 "for evidence, transcribe the supporting text as it appears on the page.\n")
-    content.append({
-        "type": "text",
-        "text": f"{note}<document source=\"{Path(doc.source).name}\">\n{doc.tagged_text()}\n</document>\n\n"
-                "Extract the change order.",
-    })
-    if repair:
-        prev, issues = repair
+    if doc.ocr_pages:
+        note += (f"Pages {doc.ocr_pages} were OCR'd from a scan; their text may contain recognition errors. "
+                 "Prefer the attached PDF image where they disagree.\n")
+    return (f"{note}<document source=\"{Path(doc.source).name}\">\n{doc.tagged_text()}\n</document>\n\n"
+            "Extract the change order.")
+
+
+def repair_prompt(prev: RawExtraction, issues: list[Issue]) -> str:
+    """The follow-up turn for the repair pass. Provider-neutral."""
+    return ("A previous extraction of this document failed validation:\n"
+            + "\n".join(f"- [{i.code}] {i.message}" for i in issues)
+            + f"\n\nPrevious output:\n{prev.model_dump_json()}\n\n"
+            "Re-read the document and return a corrected extraction. "
+            "If the document itself is inconsistent, keep the printed values and explain in notes.")
+
+
+def build_content(doc: Document, send_pdf: bool, repair: tuple[RawExtraction, list[Issue]] | None) -> list[dict]:
+    """Wrap the shared prompt text in Anthropic content blocks."""
+    content: list[dict] = []
+    if wants_pdf(doc, send_pdf):
         content.append({
-            "type": "text",
-            "text": "A previous extraction of this document failed validation:\n"
-                    + "\n".join(f"- [{i.code}] {i.message}" for i in issues)
-                    + f"\n\nPrevious output:\n{prev.model_dump_json()}\n\n"
-                    "Re-read the document and return a corrected extraction. "
-                    "If the document itself is inconsistent, keep the printed values and explain in notes.",
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(doc.pdf_bytes).decode()},
         })
+    content.append({"type": "text", "text": document_prompt(doc)})
+    if repair:
+        content.append({"type": "text", "text": repair_prompt(*repair)})
     return content
 
 
@@ -126,6 +144,7 @@ class ClaudeExtractor:
         return LLMResult(
             extraction=resp.parsed_output,
             model=resp.model,
+            provider="claude",
             input_tokens=resp.usage.input_tokens,
             output_tokens=resp.usage.output_tokens,
         )

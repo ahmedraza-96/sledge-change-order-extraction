@@ -5,21 +5,15 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from dotenv import load_dotenv
 
 from . import evaluate, pipeline
-from .extract import MODEL, ClaudeExtractor, ExtractionError, Extractor, FixtureExtractor
+from .extract import ExtractionError
+from .ingest import IMAGE_SUFFIXES
+from .providers import Provider, make_extractor
 
 app = typer.Typer(add_completion=False, help="Extract structured fields from construction change orders.")
 
-SUFFIXES = {".pdf", ".txt", ".eml"}
-
-
-def _extractor(fixtures: Path | None, text_only: bool, model: str) -> Extractor:
-    if fixtures:
-        return FixtureExtractor(fixtures)
-    load_dotenv()
-    return ClaudeExtractor(model=model, send_pdf=not text_only)
+SUFFIXES = {".pdf", ".txt", ".eml", *IMAGE_SUFFIXES}
 
 
 def _inputs(paths: list[Path]) -> list[Path]:
@@ -36,15 +30,18 @@ def extract(
     fixtures: Annotated[Path | None, typer.Option(help="Replay recorded LLM outputs instead of calling the API")] = None,
     no_repair: Annotated[bool, typer.Option("--no-repair", help="Skip the validation-driven repair pass")] = False,
     text_only: Annotated[bool, typer.Option("--text-only", help="Send extracted text only, not the PDF")] = False,
-    model: str = MODEL,
+    provider: Annotated[Provider, typer.Option(help="Which model backend to call")] = Provider.claude,
+    model: Annotated[str | None, typer.Option(help="Override the provider's default model")] = None,
+    ocr: Annotated[bool | None, typer.Option("--ocr/--no-ocr", help="OCR scanned PDF pages with Docling "
+                                                         "(default: on when docling is installed)")] = None,
 ):
     """Extract one or more change orders to JSON."""
-    ex = _extractor(fixtures, text_only, model)
+    ex = make_extractor(provider, model, fixtures, text_only)
     files = _inputs(paths)
     failed = 0
     for f in files:
         try:
-            result = pipeline.run(f, ex, allow_repair=not no_repair)
+            result = pipeline.run(f, ex, allow_repair=not no_repair, ocr=ocr)
         except ExtractionError as e:
             failed += 1
             typer.echo(f"{f}: extraction failed: {e}", err=True)
@@ -65,29 +62,41 @@ def extract(
 def eval_cmd(
     samples: Path = Path("data/samples"),
     truth: Path = Path("data/truth"),
-    runs: Annotated[Path, typer.Option(help="Where per-document results are cached")] = Path("reports/runs"),
-    report: Path = Path("reports/eval.md"),
+    runs: Annotated[Path | None, typer.Option(help="Where per-document results are cached "
+                                                   "(default: reports/runs/<provider>)")] = None,
+    report: Annotated[Path | None, typer.Option(help="Default: reports/eval-<provider>.md")] = None,
     cached: Annotated[bool, typer.Option("--cached", help="Re-score cached results without calling the API")] = False,
+    resume: Annotated[bool, typer.Option("--resume", help="Reuse documents already cached and only call "
+                                                          "the API for the rest")] = False,
     fixtures: Annotated[Path | None, typer.Option(help="Replay recorded LLM outputs")] = None,
-    model: str = MODEL,
+    provider: Annotated[Provider, typer.Option(help="Which model backend to call")] = Provider.claude,
+    model: Annotated[str | None, typer.Option(help="Override the provider's default model")] = None,
+    ocr: Annotated[bool | None, typer.Option("--ocr/--no-ocr", help="OCR scanned PDF pages with Docling "
+                                                         "(default: on when docling is installed)")] = None,
 ):
     """Run the pipeline over the labelled samples and write a markdown report."""
+    # Scoped per provider: a shared cache would let one provider's runs overwrite the
+    # other's, and --cached would then silently score a mix of the two.
+    runs = runs or Path("reports/runs") / provider.value
+    report = report or Path(f"reports/eval-{provider.value}.md")
     truths = evaluate.load_truths(truth)
     runs.mkdir(parents=True, exist_ok=True)
     results: dict[str, dict] = {}
-    ex = None if cached else _extractor(fixtures, False, model)
+    ex = None if cached else make_extractor(provider, model, fixtures)
     for f in _inputs([samples]):
         if f.stem not in truths:
             continue
         cache = runs / f"{f.stem}.json"
-        if cached:
+        if cached or (resume and cache.exists()):
             if not cache.exists():
                 typer.echo(f"{f.stem}: no cached run, skipping", err=True)
                 continue
             results[f.stem] = json.loads(cache.read_text())
+            if resume:
+                typer.echo(f"{f.stem}: cached", err=True)
             continue
         try:
-            results[f.stem] = pipeline.run(f, ex)
+            results[f.stem] = pipeline.run(f, ex, ocr=ocr)
         except ExtractionError as e:
             typer.echo(f"{f.stem}: extraction failed: {e}", err=True)
             continue
@@ -99,9 +108,27 @@ def eval_cmd(
     s = evaluate.score(results, truths)
     used_model = next(iter(results.values()))["meta"]["model"]
     report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text(evaluate.render_markdown(s, used_model))
+    report.write_text(evaluate.render_markdown(s, used_model), encoding="utf-8")
     typer.echo(f"field accuracy {s['field_accuracy']:.1%}, error recall {evaluate._pct(s['error_recall'])}, "
                f"ECE {s['ece']:.3f} -> {report}", err=True)
+    # A partial run's headline numbers are not comparable to a full one, and read far
+    # better than they deserve: documents that failed are usually the awkward ones.
+    if (missing := len(truths) - len(results)) > 0:
+        typer.echo(f"WARNING: scored {len(results)}/{len(truths)} documents ({missing} missing). "
+                   f"These numbers are not a usable baseline — rerun with --resume to fill the gaps.", err=True)
+        raise typer.Exit(2)
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Interface to bind")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on")] = 8000,
+):
+    """Run the web UI: upload or paste a change order, see fields with confidence."""
+    import uvicorn
+
+    typer.echo(f"co-extract UI on http://{host}:{port}", err=True)
+    uvicorn.run("co_extract.web:app", host=host, port=port)
 
 
 def main() -> None:

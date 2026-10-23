@@ -25,9 +25,9 @@ def _needs_repair(issues: list[Issue]) -> bool:
     return any(i.severity == "hard" or i.code in ARITHMETIC_CODES for i in issues)
 
 
-def run(path: str | Path, extractor: Extractor, allow_repair: bool = True) -> dict:
+def run(path: str | Path, extractor: Extractor, allow_repair: bool = True, ocr: bool | None = None) -> dict:
     t0 = time.perf_counter()
-    doc = load(path)
+    doc = load(path, ocr=ocr)
     calls: list[LLMResult] = [extractor.extract(doc)]
     raw = calls[0].extraction
     typed, issues = _validate(raw)
@@ -87,6 +87,8 @@ def build_result(doc: Document, raw: RawExtraction, typed: Typed, issues: list[I
         "meta": {
             "input_kind": doc.kind,
             "scanned_pages": doc.scanned_pages,
+            "ocr_pages": doc.ocr_pages,
+            "provider": calls[-1].provider,
             "model": calls[-1].model,
             "llm_calls": len(calls),
             "repair": repair,

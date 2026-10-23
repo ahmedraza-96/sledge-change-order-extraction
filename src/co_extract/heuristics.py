@@ -12,7 +12,9 @@ from decimal import Decimal
 
 from .normalize import parse_date, parse_money
 
-_MONEY = r"(\(?-?\s*\$?\s*[\d,]+\.\d{2}\)?(?:\s*(?:CR|credit))?)"
+# Label and value must share a line: [ \t] rather than \s, which would let a label that
+# ends a line ("...Contract Sum was\n$212,400.00 Net change...") grab the next line's amount.
+_MONEY = r"(\(?-?[ \t]*\$?[ \t]*[\d,]+\.\d{2}\)?(?:[ \t]*(?:CR|credit))?)"
 _GAP = r"[^\n$\d(]{0,60}?"
 
 _MONEY_LABELS: dict[str, str] = {

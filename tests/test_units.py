@@ -73,3 +73,12 @@ def test_value_in_evidence():
     assert value_in_evidence("date_issued", date(2026, 4, 3), "Date: March 4, 2026") is False
     assert value_in_evidence("contractor", "Northgate Builders, Inc.", "NORTHGATE BUILDERS, INC.") is True
     assert value_in_evidence("description", "anything", "whatever") is None
+
+
+def test_heuristics_do_not_cross_lines():
+    # OCR often puts the amount before its label; the label must not grab the next line's number.
+    text = ("$7,950,000.00 The original Contract Sum was\n"
+            "$212,400.00 Net change by previously authorized Change Orders\n")
+    c = heuristics.extract(text)
+    assert "original_contract_sum" not in c  # abstain, rather than guess 212,400.00
+    assert heuristics.agrees("original_contract_sum", Decimal("7950000.00"), c) is None

@@ -96,8 +96,8 @@ def render_pdf(path: Path, pages: list[list[str]], font_size=9, extra=None):
 
 def scan(src: Path, dst: Path):
     """Rasterize and degrade a PDF into an image-only PDF."""
-    doc = pymupdf.open(src)
-    pix = doc[0].get_pixmap(dpi=130)
+    with pymupdf.open(src) as doc:  # must close before unlink: Windows keeps the handle locked
+        pix = doc[0].get_pixmap(dpi=130)
     img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
     img = img.rotate(1.1, expand=True, fillcolor=255).filter(ImageFilter.GaussianBlur(0.6))
     px = img.load()
@@ -238,7 +238,8 @@ def s05():
               total_change_amount="8740.50", schedule_impact_days=3, status="pending", _variant="email body with superseded quoted estimate")
     msg = EmailMessage()
     msg["From"] = "Dana Kim <dkim@summitinteriors.com>"
-    msg["To"] = "Paul Ferris <pferris@grandviewprop.com>"
+    # The owner company must be printed somewhere, or the truth would hold a value the document never states.
+    msg["To"] = "Paul Ferris (Grandview Properties) <pferris@grandviewprop.com>"
     msg["Date"] = "Mon, 16 Mar 2026 09:12:00 -0700"
     msg["Subject"] = "RE: Lobby ceiling - CO #9 pricing"
     msg.set_content(

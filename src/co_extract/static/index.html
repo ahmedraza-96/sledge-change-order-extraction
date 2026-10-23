@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change Order Extractor</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --border: #dde1e6;
+    --accent: #2f6fde; --accent-text: #ffffff;
+    --good: #1f8a4c; --warn: #b7791f; --bad: #c53030;
+    --good-bg: #e6f4ec; --warn-bg: #fdf3e1; --bad-bg: #fdecec; --code-bg: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --card: #1b2028; --text: #e6e9ee; --muted: #9aa5b4; --border: #2c333d;
+      --accent: #5b8ef0; --accent-text: #0d1117;
+      --good: #4cc483; --warn: #e0a53c; --bad: #f06b6b;
+      --good-bg: #173325; --warn-bg: #3a2d14; --bad-bg: #3d1b1b; --code-bg: #232933;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  .drop { border: 2px dashed var(--border); border-radius: 8px; padding: 28px 12px; text-align: center;
+          color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; min-height: 170px;
+          display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+  .drop.over { border-color: var(--accent); background: var(--code-bg); }
+  .drop strong { color: var(--text); }
+  textarea { width: 100%; min-height: 170px; resize: vertical; padding: 10px; border-radius: 8px;
+             border: 1px solid var(--border); background: var(--bg); color: var(--text); font: 13px/1.45 ui-monospace, Consolas, monospace; }
+  select, input[type=text] { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+                             background: var(--bg); color: var(--text); font: inherit; }
+  .row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-top: 16px; }
+  .row > div { flex: 1 1 200px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border);
+           background: var(--card); color: var(--text); padding: 7px 12px; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; padding: 9px 22px; }
+  button:disabled { opacity: .55; cursor: wait; }
+  .link { border: none; background: none; color: var(--accent); padding: 0; font-size: 13px; }
+  .samples { margin-top: 6px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
+             border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); border-radius: 8px; padding: 12px; margin-bottom: 16px; white-space: pre-wrap; }
+  .summary { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .big { font-size: 34px; font-weight: 700; line-height: 1; padding: 12px 16px; border-radius: 10px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin: 2px 4px 2px 0;
+          background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+  .chip.soft { background: var(--warn-bg); color: var(--warn); }
+  .chip.ok { background: var(--good-bg); color: var(--good); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  tr.review td { background: var(--bad-bg); }
+  .fname { font-family: ui-monospace, Consolas, monospace; font-size: 13px; white-space: nowrap; }
+  .null { color: var(--muted); font-style: italic; }
+  .conf { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+  .bar { flex: 1; height: 8px; background: var(--code-bg); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; }
+  .num { font-variant-numeric: tabular-nums; font-weight: 600; width: 34px; text-align: right; }
+  .evidence { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+  .reasons { margin: 0; padding-left: 16px; font-size: 12px; color: var(--muted); }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow: auto; max-height: 480px; font-size: 12px; }
+  .hidden { display: none; }
+  .toolbar { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Change Order Extractor</h1>
+  <p class="sub">Upload or paste a construction change order. Each extracted field gets a confidence score;
+    anything below 0.70 is flagged for review.</p>
+
+  <section class="card">
+    <div class="grid">
+      <div>
+        <label>Upload a file</label>
+        <div id="drop" class="drop" tabindex="0">
+          <div><strong>Drop a PDF, photo/scan image, .txt or .eml here</strong></div>
+          <div>or click to browse</div>
+          <div id="fileName"></div>
+        </div>
+        <input id="file" type="file" accept=".pdf,.txt,.eml,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp" class="hidden">
+      </div>
+      <div>
+        <label for="text">…or paste the text</label>
+        <textarea id="text" placeholder="CHANGE ORDER No. …"></textarea>
+        <div class="samples" id="samples"></div>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="provider">Model provider</label>
+        <select id="provider"></select>
+      </div>
+      <div>
+        <label for="model">Model (optional)</label>
+        <input id="model" type="text" placeholder="default">
+      </div>
+      <div style="flex:0 0 auto">
+        <button id="go" class="primary">Extract</button>
+      </div>
+    </div>
+    <div class="hint">A live model call usually takes 10–60 seconds, longer if a repair pass is needed or a scan/photo has to be OCR'd.</div>
+  </section>
+
+  <div id="error" class="error hidden"></div>
+  <div id="results" class="hidden"></div>
+</main>
+
+<script>
+const THRESHOLD = 0.7;
+const $ = (id) => document.getElementById(id);
+let file = null, sampleName = null, lastResult = null;
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const color = (c) => c >= 0.85 ? "good" : c >= THRESHOLD ? "warn" : "bad";
+const fmt = (v) => v === null || v === undefined ? '<span class="null">not stated</span>' : esc(typeof v === "object" ? JSON.stringify(v) : v);
+const confCell = (c) => `<div class="conf"><div class="bar"><span style="width:${Math.round(c * 100)}%;background:var(--${color(c)})"></span></div><span class="num" style="color:var(--${color(c)})">${c.toFixed(2)}</span></div>`;
+
+// --- inputs --------------------------------------------------------------
+function setFile(f) {
+  file = f;
+  $("fileName").innerHTML = f ? `<strong>${esc(f.name)}</strong> <button class="link" id="clearFile">remove</button>` : "";
+  if (f) { $("text").value = ""; sampleName = null; $("clearFile").onclick = (e) => { e.stopPropagation(); setFile(null); $("file").value = ""; }; }
+}
+$("drop").onclick = () => $("file").click();
+$("drop").onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") $("file").click(); };
+$("file").onchange = (e) => setFile(e.target.files[0] || null);
+["dragenter", "dragover"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+$("text").oninput = () => { sampleName = null; if ($("text").value) setFile(null); };
+
+async function loadProviders() {
+  const list = await (await fetch("/api/providers")).json();
+  const sel = $("provider");
+  sel.innerHTML = list.map((p) => `<option value="${p.id}" data-model="${esc(p.default_model)}" ${p.available ? "" : "disabled"}>${esc(p.label)}${p.available ? "" : " — no API key"}</option>`).join("");
+  const first = list.find((p) => p.available && p.id !== "demo") || list.find((p) => p.available);
+  if (first) sel.value = first.id;
+  sel.onchange = () => { $("model").placeholder = sel.selectedOptions[0].dataset.model; };
+  sel.onchange();
+}
+
+async function loadSamples() {
+  const names = await (await fetch("/api/samples")).json();
+  if (!names.length) return;
+  $("samples").innerHTML = "Load sample: " + names.map((n) => `<button class="link" data-s="${esc(n)}">${esc(n)}</button>`).join("");
+  $("samples").querySelectorAll("button").forEach((b) => b.onclick = async () => {
+    $("text").value = await (await fetch("/api/samples/" + encodeURIComponent(b.dataset.s))).text();
+    setFile(null);
+    sampleName = b.dataset.s;
+  });
+}
+
+// --- extract -------------------------------------------------------------
+$("go").onclick = async () => {
+  const fd = new FormData();
+  fd.append("provider", $("provider").value);
+  if ($("model").value.trim()) fd.append("model", $("model").value.trim());
+  if (file) fd.append("file", file);
+  else { fd.append("text", $("text").value); if (sampleName) fd.append("name", sampleName); }
+
+  $("error").classList.add("hidden");
+  $("go").disabled = true;
+  $("go").innerHTML = '<span class="spinner"></span>Extracting…';
+  try {
+    const resp = await fetch("/api/extract", {method: "POST", body: fd});
+    const body = await resp.json().catch(() => ({detail: resp.statusText}));
+    if (!resp.ok) throw new Error(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail));
+    lastResult = body;
+    render(body);
+  } catch (err) {
+    $("error").textContent = "Extraction failed: " + err.message;
+    $("error").classList.remove("hidden");
+  } finally {
+    $("go").disabled = false;
+    $("go").textContent = "Extract";
+  }
+};
+
+// --- results -------------------------------------------------------------
+function render(r) {
+  const m = r.meta, dc = r.document_confidence;
+  const review = r.needs_review.length
+    ? r.needs_review.map((f) => `<span class="chip">${esc(f)}</span>`).join("")
+    : '<span class="chip ok">nothing flagged</span>';
+  const repair = m.repair ? ` · repair pass (triggered by ${esc(m.repair.triggered_by.join(", "))})` : "";
+  const tokens = m.input_tokens || m.output_tokens ? ` · ${m.input_tokens} in / ${m.output_tokens} out tokens` : "";
+
+  const rows = Object.entries(r.fields).filter(([k]) => k !== "line_items").map(([name, f]) => `
+    <tr class="${f.confidence < THRESHOLD ? "review" : ""}">
+      <td class="fname">${esc(name)}</td>
+      <td>${fmt(f.value)}</td>
+      <td>${confCell(f.confidence)}</td>
+      <td class="evidence">${f.evidence ? "“" + esc(f.evidence) + "”" + (f.page ? ` <span>(p.${f.page})</span>` : "") : ""}</td>
+      <td>${f.reasons.length ? `<ul class="reasons">${f.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</td>
+    </tr>`).join("");
+
+  const li = r.fields.line_items;
+  const liRows = li.value.map((x) => `<tr><td>${fmt(x.description)}</td><td>${fmt(x.quantity)}</td><td>${fmt(x.unit)}</td><td>${fmt(x.unit_price)}</td><td>${fmt(x.amount)}</td></tr>`).join("")
+    || '<tr><td colspan="5" class="null">no line items</td></tr>';
+
+  const issues = r.issues.length
+    ? `<table><thead><tr><th>Severity</th><th>Code</th><th>Message</th><th>Fields</th></tr></thead><tbody>${r.issues.map((i) =>
+        `<tr><td><span class="chip ${i.severity === "hard" ? "" : "soft"}">${esc(i.severity)}</span></td><td class="fname">${esc(i.code)}</td><td>${esc(i.message)}</td><td class="fname">${esc(i.fields.join(", "))}</td></tr>`).join("")}</tbody></table>`
+    : '<span class="chip ok">no validation issues</span>';
+
+  const notes = r.notes.length ? `<ul>${r.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : '<span class="null">none</span>';
+
+  $("results").innerHTML = `
+    <section class="card summary">
+      <div class="big" style="background:var(--${color(dc)}-bg);color:var(--${color(dc)})">${dc.toFixed(2)}</div>
+      <div>
+        <div><strong>Document confidence</strong> · ${esc(r.source)}</div>
+        <div style="margin:4px 0">Needs review: ${review}</div>
+        <div class="meta">${esc(m.provider)} · ${esc(m.model)} · ${m.llm_calls} call(s) · ${m.seconds}s${tokens}${repair}${m.scanned_pages.length ? ` · scanned pages ${m.scanned_pages.join(", ")}` : ""}${(m.ocr_pages || []).length ? ` · OCR pages ${m.ocr_pages.join(", ")}` : ""}</div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Fields</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Field</th><th>Value</th><th>Confidence</th><th>Evidence</th><th>Why</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </section>
+    <section class="card">
+      <h2 style="display:flex;gap:12px;align-items:center">Line items <span style="flex:0 0 160px;font-weight:400">${confCell(li.confidence)}</span></h2>
+      ${li.reasons.length ? `<ul class="reasons" style="margin-bottom:10px">${li.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <div class="tablewrap"><table>
+        <thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Unit price</th><th>Amount</th></tr></thead>
+        <tbody>${liRows}</tbody>
+      </table></div>
+    </section>
+    <section class="card"><h2>Validation issues</h2><div class="tablewrap">${issues}</div></section>
+    <section class="card"><h2>Model notes</h2>${notes}</section>
+    <section class="card">
+      <div class="toolbar"><button id="toggleJson">Show raw JSON</button><button id="dl">Download JSON</button></div>
+      <pre id="json" class="hidden">${esc(JSON.stringify(r, null, 2))}</pre>
+    </section>`;
+  $("results").classList.remove("hidden");
+  $("toggleJson").onclick = () => {
+    const hidden = $("json").classList.toggle("hidden");
+    $("toggleJson").textContent = hidden ? "Show raw JSON" : "Hide raw JSON";
+  };
+  $("dl").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(lastResult, null, 2)], {type: "application/json"}));
+    a.download = (lastResult.source || "result").replace(/\.[^.]+$/, "") + ".json";
+    a.click();
+  };
+  $("results").scrollIntoView({behavior: "smooth"});
+}
+
+loadProviders();
+loadSamples();
+</script>
+</body>
+</html>
