@@ -32,8 +32,6 @@ def extract(
     text_only: Annotated[bool, typer.Option("--text-only", help="Send extracted text only, not the PDF")] = False,
     provider: Annotated[Provider, typer.Option(help="Which model backend to call")] = Provider.claude,
     model: Annotated[str | None, typer.Option(help="Override the provider's default model")] = None,
-    ocr: Annotated[bool | None, typer.Option("--ocr/--no-ocr", help="OCR scanned PDF pages with Docling "
-                                                         "(default: on when docling is installed)")] = None,
 ):
     """Extract one or more change orders to JSON."""
     ex = make_extractor(provider, model, fixtures, text_only)
@@ -41,7 +39,7 @@ def extract(
     failed = 0
     for f in files:
         try:
-            result = pipeline.run(f, ex, allow_repair=not no_repair, ocr=ocr)
+            result = pipeline.run(f, ex, allow_repair=not no_repair)
         except ExtractionError as e:
             failed += 1
             typer.echo(f"{f}: extraction failed: {e}", err=True)
@@ -71,8 +69,6 @@ def eval_cmd(
     fixtures: Annotated[Path | None, typer.Option(help="Replay recorded LLM outputs")] = None,
     provider: Annotated[Provider, typer.Option(help="Which model backend to call")] = Provider.claude,
     model: Annotated[str | None, typer.Option(help="Override the provider's default model")] = None,
-    ocr: Annotated[bool | None, typer.Option("--ocr/--no-ocr", help="OCR scanned PDF pages with Docling "
-                                                         "(default: on when docling is installed)")] = None,
 ):
     """Run the pipeline over the labelled samples and write a markdown report."""
     # Scoped per provider: a shared cache would let one provider's runs overwrite the
@@ -96,7 +92,7 @@ def eval_cmd(
                 typer.echo(f"{f.stem}: cached", err=True)
             continue
         try:
-            results[f.stem] = pipeline.run(f, ex, ocr=ocr)
+            results[f.stem] = pipeline.run(f, ex)
         except ExtractionError as e:
             typer.echo(f"{f.stem}: extraction failed: {e}", err=True)
             continue

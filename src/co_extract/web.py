@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from . import pipeline
 from .cli import SUFFIXES
 from .extract import ExtractionError, FixtureExtractor
+from .ingest import load
 from .providers import DEFAULT_MODELS, Provider, has_key, make_extractor
 
 STATIC = Path(__file__).parent / "static"
@@ -94,5 +95,8 @@ def extract(
                 msg = (f"Demo mode only has recorded output for the sample documents "
                        f"({', '.join(SAMPLES)}). {msg}")
             raise HTTPException(502, msg) from e
+        # The page text the evidence quotes were checked against, so the UI can highlight them.
+        doc = load(path)
     result["source"] = filename  # not the temp path
+    result["document"] = {"kind": doc.kind, "pages": doc.pages, "scanned_pages": doc.scanned_pages}
     return result

@@ -17,17 +17,13 @@ dependencies = [
     "python-multipart>=0.0.32",
     "rapidfuzz>=3.14.6",
     "reportlab>=5.0.1",
-    "typer>=0.19",
+    "typer>=0.27.3",
     "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
 co-extract = "co_extract.cli:main"
 
-[project.optional-dependencies]
-ocr = [
-    "docling>=2.142.1",
-]
 
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]

@@ -18,10 +18,8 @@ ingest ──► extract (LLM)    ──► normalize + validate ──► repai
 1. **Ingest.** pdfplumber pulls per-page text, tagged with `[[page N]]`. A page with almost no text
    layer is treated as scanned. Images (PNG/JPG/TIFF/WebP — phone photos, fax scans) are converted to
    PDF pages first, upright per their EXIF rotation and capped at 2400 px, so they take exactly the
-   scanned-PDF path from here on. If the optional [Docling](https://github.com/docling-project/docling)
-   extra is installed (`uv sync --extra ocr`), scanned pages are OCR'd so they get a text layer too.
-   Only pages pdfplumber finds empty are OCR'd: native text is exact and OCR is slow (about 100 s a
-   page on CPU). `.eml` files drop the quoted reply chain, because earlier messages often hold
+   scanned-PDF path from here on: the page image is sent to the model, which reads it directly.
+   `.eml` files drop the quoted reply chain, because earlier messages often hold
    superseded numbers.
 2. **Extract.** One LLM call with structured outputs against a Pydantic schema, so the response
    always matches the schema. The default is `claude-opus-5-5`; Gemini and OpenAI sit behind the same
@@ -65,12 +63,9 @@ ingest ──► extract (LLM)    ──► normalize + validate ──► repai
    - **Rules:** each failed rule involving the field multiplies its score by 0.6.
    - **Independent cross-check:** a labelled-value regex extractor. Agreement adds 0.1;
      disagreement halves the score.
-   - **Scanned pages:** without OCR these can't be grounded, so they get a neutral grounding score
-     and a small penalty. That deliberately pushes scans toward review. With OCR they are grounded
-     against the OCR text, with a milder penalty, because OCR can misread a digit too. On the
-     scanned sample this takes document confidence from 0.76, where every field got the same
-     unverifiable score, to 0.87. The fields are now actually checked, and the one whose amount the
-     OCR cut short (`$8,179,334.` for `$8,179,334.40`) scores lower than the rest.
+   - **Scanned pages and photos:** these can't be grounded, because there is no text layer to check
+     a quote against. They get a neutral grounding score and a small penalty, which deliberately
+     pushes them toward review.
 
    Fields below 0.7 go to `needs_review`. Document confidence is driven by the weakest *critical*
    field (CO number, amount, contract sums).
@@ -114,7 +109,7 @@ They run offline.
 | Credit sign lost (`($3,200)` → `3200`) | Deterministic parser handles parens/CR; `credit_sign` rule | Credit implied only by prose |
 | Misread digit / transposition | Value-in-evidence cap; arithmetic rules; repair pass | A misread in a field no rule touches (e.g. project number) is caught only if the quote is exact |
 | Hallucinated value for a missing field | "null over guess" prompt; evidence must ground; null-vs-regex check | Plausible value with a plausible quote on a scan |
-| Scans / phone photos | PDF is sent as an image to the model; with the `ocr` extra, Docling OCRs the page so evidence can be grounded and the regex cross-check can run | OCR misreads (`ESp-07`, dropped cents) weaken grounding, so those fields drift toward review rather than passing silently. Without the extra, scans fall back to a discounted neutral score |
+| Scans / phone photos | Page is sent as an image to a vision model; photos are EXIF-rotated and size-capped first; confidence is discounted | No text layer to ground against, and the regex cross-check has nothing to read, so scans lean on review. See OCR under *What I'd do next* |
 | Handwritten overrides / strike-throughs | Model sees the page image; prompt says latest edit wins; surfaced in `notes` | Ambiguous markups. These *should* go to a human |
 | Superseded numbers in email threads | Quoted chain stripped at ingest; prompt warning | Forwarded threads without `>` quoting |
 | Document's own math is wrong | Rules fire, re-read confirms, values kept as printed and flagged | — (correct behaviour is to flag) |
@@ -197,6 +192,11 @@ Two things surfaced immediately that are worth recording:
   instead of hand-setting them. The weights are currently shared across providers, which the Gemini
   numbers show is wrong: a model whose self-report is flat needs `W_MODEL` near zero and the freed
   weight moved to grounding. Fitting per provider falls out of doing this properly.
+- **OCR scanned pages for grounding,** so quotes on scans can be checked like text pages. This was
+  built and measured with Docling and then removed. On the scanned sample it raised document
+  confidence from 0.76 (every field the same unverifiable score) to 0.87 (each field actually
+  checked), but it cost about 90 s per page on CPU, against 15–60 s for the whole model call. It's
+  worth it only on a GPU or with a much faster OCR engine.
 - **Split multi-CO packets** and run extraction on each.
 - **Per-customer layout hints** (few-shot from their past COs), with prompt caching for the static
   prefix.

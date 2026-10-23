@@ -87,9 +87,7 @@ confidence scoring.
 a value absent from its own evidence quote is capped at `UNSUPPORTED_CAP` (0.3), and disagreement with `heuristics.py`
 halves the score. Scanned pages can't be grounded, so `grounding()` returns `None` and they get a neutral score plus a
 penalty — deliberately pushing scans toward review. Images (`ingest.IMAGE_SUFFIXES`) are converted to PDF pages by `image_to_pdf` and then follow the scanned-PDF path
-exactly (`Document.kind == "image"`). If docling is installed (`uv sync --extra ocr`), `ingest._ocr_pages`
-OCRs pages with no text layer; those move from `scanned_pages` to `ocr_pages`, are grounded normally and take the milder
-`OCR_PENALTY`. `tests/conftest.py` stubs `_ocr_pages` for every non-live test, so the suite never runs real OCR. Document confidence is driven by the weakest `CRITICAL_FIELDS`.
+exactly (`Document.kind == "image"`): the vision model reads the page image, and there is no OCR. Document confidence is driven by the weakest `CRITICAL_FIELDS`.
 
 **`heuristics.py` is a cross-check, not a fallback.** A high-precision labelled-value regex extractor that abstains
 (`agrees()` returns `None`) rather than guessing. Keep it independent of the LLM path; its value is disagreeing.

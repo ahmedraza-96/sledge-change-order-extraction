@@ -8,7 +8,7 @@ See **[WRITEUP.md](WRITEUP.md)** for the approach, how confidence is computed, a
 ## Quickstart
 
 ```bash
-uv sync                         # add `--extra ocr` to OCR scanned PDFs with Docling (large download)
+uv sync
 cp .env.example .env            # add OPENROUTER_API_KEY (free), ANTHROPIC_API_KEY, GEMINI_API_KEY and/or OPENAI_API_KEY
 uv run python scripts/gen_dataset.py                      # generates data/samples + data/truth (not committed)
 uv run co-extract extract data/samples/03_credit.pdf      # JSON to stdout

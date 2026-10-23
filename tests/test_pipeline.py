@@ -312,60 +312,16 @@ def _blank_pdf(tmp_path) -> Path:
     return path
 
 
-OCR_TEXT = ("CHANGE ORDER No. CO-007\nProject: Lakeview Medical Office Building\n"
-            "Total this Change Order $3,850.00\nThe Contract Sum including this Change Order will be $1,296,150.00")
 
 
-def test_ocr_recovers_scanned_page(tmp_path, monkeypatch):
-    from co_extract import ingest
-
-    monkeypatch.setattr(ingest, "_ocr_pages", lambda path, pages: {p: OCR_TEXT for p in pages})
-    doc = load(_blank_pdf(tmp_path))
-    assert doc.ocr_pages == [1] and doc.scanned_pages == []
-    assert "$3,850.00" in doc.text
 
 
-def test_ocr_pages_are_grounded_with_a_milder_penalty(tmp_path, monkeypatch):
-    from co_extract import ingest
-
-    # The fixture is keyed by stem, so give the blank PDF the simple_co stem.
-    path = _blank_pdf(tmp_path).rename(tmp_path / "simple_co.pdf")
-    as_scan = pipeline.run(path, FixtureExtractor(FIX / "llm"))
-    monkeypatch.setattr(ingest, "_ocr_pages", lambda p, pages: {i: OCR_TEXT for i in pages})
-    as_ocr = pipeline.run(path, FixtureExtractor(FIX / "llm"))
-    f_scan, f_ocr = as_scan["fields"]["total_change_amount"], as_ocr["fields"]["total_change_amount"]
-    assert any("scanned page" in r for r in f_scan["reasons"])
-    assert "page text from OCR" in f_ocr["reasons"]
-    assert f_ocr["confidence"] > f_scan["confidence"]
-    assert as_ocr["meta"]["ocr_pages"] == [1] and as_ocr["meta"]["scanned_pages"] == []
 
 
-def test_ocr_note_in_prompt_and_pdf_attached(tmp_path, monkeypatch):
-    from co_extract import ingest
-
-    monkeypatch.setattr(ingest, "_ocr_pages", lambda path, pages: {p: OCR_TEXT for p in pages})
-    captured: list = []
-    ClaudeExtractor(client=_mock_client(captured, GOOD), send_pdf=False).extract(load(_blank_pdf(tmp_path)))
-    blocks = captured[0]["messages"][0]["content"]
-    assert blocks[0]["type"] == "document"  # the image is still sent alongside the OCR text
-    assert "were OCR'd" in blocks[-1]["text"]
-    assert "no text layer" not in blocks[-1]["text"]
 
 
-def test_ocr_disabled_keeps_page_scanned(tmp_path, monkeypatch):
-    from co_extract import ingest
-
-    monkeypatch.setattr(ingest, "_ocr_pages", lambda path, pages: {p: OCR_TEXT for p in pages})
-    doc = load(_blank_pdf(tmp_path), ocr=False)
-    assert doc.scanned_pages == [1] and doc.ocr_pages == []
 
 
-def test_ocr_forced_without_docling_fails_loudly(tmp_path, monkeypatch):
-    from co_extract import ingest
-
-    monkeypatch.setattr(ingest, "ocr_available", lambda: False)
-    with pytest.raises(RuntimeError, match="docling is not installed"):
-        load(_blank_pdf(tmp_path), ocr=True)
 
 
 def _image(tmp_path, name="photo.png", size=(400, 300), exif_orientation=None, frames=1) -> Path:
@@ -420,18 +376,6 @@ def test_multipage_tiff_becomes_multipage_pdf(tmp_path):
     assert len(doc.pages) == 2 and doc.scanned_pages == [1, 2]
 
 
-def test_image_goes_through_ocr_and_is_sent_to_the_model(tmp_path, monkeypatch):
-    from co_extract import ingest
-
-    seen = []
-    monkeypatch.setattr(ingest, "_ocr_pages", lambda source, pages: seen.append(source) or {p: OCR_TEXT for p in pages})
-    path = _image(tmp_path)
-    doc = load(path)
-    assert doc.ocr_pages == [1] and "$3,850.00" in doc.text
-    assert seen and seen[0] != path  # an in-memory PDF, not the image file itself
-    captured: list = []
-    ClaudeExtractor(client=_mock_client(captured, GOOD), send_pdf=False).extract(doc)
-    assert captured[0]["messages"][0]["content"][0]["type"] == "document"
 
 
 def _mock_openrouter_client(captured: list, payload: dict | None, status: int = 200, finish_reason="stop",
@@ -519,3 +463,12 @@ def test_openrouter_missing_key_is_reported(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ExtractionError, match="OPENROUTER_API_KEY"):
         OpenRouterExtractor()
+
+
+def test_image_is_sent_to_the_model(tmp_path):
+    captured: list = []
+    doc = load(_image(tmp_path))
+    ClaudeExtractor(client=_mock_client(captured, GOOD), send_pdf=False).extract(doc)
+    blocks = captured[0]["messages"][0]["content"]
+    assert blocks[0]["type"] == "document"  # the model reads the page image itself
+    assert "no text layer" in blocks[-1]["text"]

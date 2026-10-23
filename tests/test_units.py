@@ -76,7 +76,7 @@ def test_value_in_evidence():
 
 
 def test_heuristics_do_not_cross_lines():
-    # OCR often puts the amount before its label; the label must not grab the next line's number.
+    # Reflowed or scanned text often puts the amount before its label; the label must not grab the next line's number.
     text = ("$7,950,000.00 The original Contract Sum was\n"
             "$212,400.00 Net change by previously authorized Change Orders\n")
     c = heuristics.extract(text)

@@ -16,7 +16,7 @@ def client():
 def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert "Change Order Extractor" in r.text
+    assert "Change order review" in r.text
 
 
 def test_providers_list_includes_demo(client):
@@ -75,3 +75,13 @@ def test_image_upload_accepted(client):
     # Not rejected as an unsupported type; demo mode just has no recording for it.
     assert r.status_code == 502
     assert "Demo mode only has recorded output" in r.json()["detail"]
+
+
+def test_extract_returns_document_text_for_highlighting(client):
+    doc = (FIX / "docs" / "simple_co.txt").read_bytes()
+    body = client.post("/api/extract", data={"provider": "demo"},
+                       files={"file": ("simple_co.txt", doc, "text/plain")}).json()
+    assert body["document"]["kind"] == "text"
+    # Every grounded evidence quote can be found in the returned page text.
+    page = body["document"]["pages"][0]
+    assert body["fields"]["change_order_number"]["evidence"] in page
