@@ -95,56 +95,22 @@
   .panel-bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; min-height: 50px; }
   .panel-bar h2 { margin: 0; font-size: 15px; }
   .panel-bar .spacer { flex: 1; }
-  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
-  .seg button { border: 0; background: var(--paper); padding: 5px 12px; cursor: pointer; font-size: 14px; color: var(--muted); }
-  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
-  .legend { display: flex; gap: 12px; font-size: 13px; color: var(--muted); align-items: center; }
-  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid; margin-right: 4px; vertical-align: -2px; }
+  .panel-bar .doc-name { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
-  /* map */
-  .map-body { overflow: auto; background: var(--wash); padding: 16px; display: grid; gap: 16px; align-content: start; }
-  .map-note { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--muted); }
-  .sheet { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
-  .sheet .sheet-head { padding: 6px 12px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--rule); display: flex; gap: 12px; }
-  .sheet svg { display: block; width: 100%; height: auto; }
-  .page-img { pointer-events: none; }
-  .gutter { fill: var(--wash); }
-  .mk { cursor: pointer; transition: opacity .15s; }
-  .mk .ring { fill-opacity: .10; stroke-width: 3.5; }
-  .mk .leader { fill: none; stroke-width: 2.4; }
-  .mk .card { fill: var(--paper); stroke-width: 2; }
-  .mk .pin-c { stroke: var(--paper); stroke-width: 2.5; }
-  .mk .pin-t { fill: #fff; font: 700 17px var(--sans); text-anchor: middle; dominant-baseline: central; }
-  .mk .t-name { font: 600 19px var(--sans); fill: var(--ink); }
-  .mk .t-val { font: 500 19px var(--sans); fill: var(--ink); }
-  .mk .t-conf { font: 700 18px var(--sans); text-anchor: end; }
-  .mk.c-good .ring, .mk.c-good .pin-c { fill: var(--good); } .mk.c-good .ring { stroke: var(--good); }
-  .mk.c-warn .ring, .mk.c-warn .pin-c { fill: var(--warn); } .mk.c-warn .ring { stroke: var(--warn); }
-  .mk.c-bad  .ring, .mk.c-bad  .pin-c { fill: var(--bad); }  .mk.c-bad  .ring { stroke: var(--bad); }
-  .mk.c-good .leader, .mk.c-good .card { stroke: var(--good); }
-  .mk.c-warn .leader, .mk.c-warn .card { stroke: var(--warn); }
-  .mk.c-bad  .leader, .mk.c-bad  .card { stroke: var(--bad); }
-  .mk.c-good .t-conf { fill: var(--good); } .mk.c-warn .t-conf { fill: var(--warn); } .mk.c-bad .t-conf { fill: var(--bad); }
-  .mk.hot .ring, .mk.sel .ring { stroke-width: 5.5; fill-opacity: .18; }
-  .mk.hot .leader, .mk.sel .leader { stroke-width: 3.6; }
-  .mk.sel .card { stroke: var(--blue); stroke-width: 3.5; fill: var(--blue-wash); }
-  .map-body.has-sel .mk:not(.sel):not(.hot) { opacity: .28; }
-  .unmapped { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
-  .unmapped h3 { margin: 0 0 6px; font-size: 14px; }
-  .unmapped ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; color: var(--muted); }
-  .unmapped b { color: var(--ink); font-weight: 600; }
+  /* the original document, as uploaded (the panel and the preview dialog both use it) */
+  .doc-body { overflow: auto; background: var(--wash); }
+  .doc-body iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
+  .doc-body .img-wrap { padding: 16px; }
+  .doc-body img { display: block; max-width: 100%; margin: 0 auto; box-shadow: 0 1px 3px rgba(23, 32, 43, .12); background: var(--paper); cursor: zoom-in; }
+  .doc-body img.zoomed { max-width: none; cursor: zoom-out; }
+  .doc-body pre { margin: 16px; padding: 14px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; }
+  .doc-body .note { margin: 16px; color: var(--muted); }
 
   /* JSON */
   .json-body { overflow: auto; background: var(--paper); padding: 12px 0; }
   .json { font: 13px/1.75 var(--mono); min-width: max-content; }
-  .jl { display: grid; grid-template-columns: 40px auto; align-items: center; padding-right: 16px; }
-  .jl .gut { display: grid; place-items: center; }
+  .jl { padding: 0 16px; }
   .jl .code { white-space: pre; }
-  .jl.fld { cursor: pointer; border-radius: 4px; }
-  .jl.fld:hover, .jl.fld.hot { background: var(--wash); }
-  .jl.fld.selected { background: var(--blue-wash); }
-  .pin { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font: 700 11px var(--sans); }
-  .pin.none { background: var(--paper); color: var(--muted); border: 1.5px dashed #c5ccd5; }
   .j-key { color: var(--key); }
   .j-str { color: var(--str); }
   .j-num { color: var(--ink); }
@@ -162,12 +128,7 @@
   .dlg-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
   .dlg-bar span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dlg-bar .btn { margin-left: auto; }
-  .dlg-body { overflow: auto; background: var(--wash); }
-  .dlg-body iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
-  .dlg-body .img-wrap { padding: 16px; }
-  .dlg-body img { display: block; max-width: 100%; margin: 0 auto; box-shadow: 0 1px 3px rgba(23, 32, 43, .12); background: var(--paper); cursor: zoom-in; }
-  .dlg-body img.zoomed { max-width: none; cursor: zoom-out; }
-  .dlg-body pre { margin: 16px; padding: 14px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; }
+
 
   /* whole-document warnings */
   .banner { grid-column: 1 / -1; border-radius: 10px; padding: 14px 16px; border: 1px solid; display: grid; gap: 4px; }
@@ -262,15 +223,9 @@
     <div class="panel">
       <div class="panel-bar">
         <h2>Document</h2>
-        <div class="seg" role="group" aria-label="Which fields to show">
-          <button type="button" data-filter="all" aria-pressed="true">All fields</button>
-          <button type="button" data-filter="review" aria-pressed="false">Below 0.70</button>
-        </div>
-        <span class="spacer"></span>
-        <span class="legend"><span><i style="border-color:var(--good)"></i>0.85+</span><span><i style="border-color:var(--warn)"></i>0.70+</span><span><i style="border-color:var(--bad)"></i>below</span></span>
-        <button class="btn" id="originalBtn" type="button">Original file</button>
+        <span class="doc-name" id="docName"></span>
       </div>
-      <div class="map-body" id="mapBody"></div>
+      <div class="doc-body" id="docBody"></div>
     </div>
     <div class="panel">
       <div class="panel-bar">
@@ -287,7 +242,7 @@
 <dialog id="dialog" aria-label="File preview">
   <div class="dlg">
     <div class="dlg-bar"><strong>Preview</strong><span id="dlgName"></span><button class="btn" id="dlgClose" type="button">Close</button></div>
-    <div class="dlg-body" id="dlgBody"></div>
+    <div class="dlg-body doc-body" id="dlgBody"></div>
   </div>
 </dialog>
 
@@ -298,46 +253,10 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&l
 
 const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp"];
 const BROWSER_IMAGES = ["png", "jpg", "jpeg", "webp", "bmp"];   // TIFF doesn't display in most browsers
-const MONEY = new Set(["subtotal", "markup", "tax", "total_change_amount", "original_contract_sum",
-                       "previous_change_orders_total", "revised_contract_sum"]);
-const LABELS = {
-  change_order_number: "Change order no.", project_name: "Project", project_number: "Project no.",
-  contractor: "Contractor", owner: "Owner", date_issued: "Date issued", description: "Description",
-  reason: "Reason", subtotal: "Subtotal", markup: "Markup", tax: "Tax", total_change_amount: "This change order",
-  currency: "Currency", original_contract_sum: "Original contract sum",
-  previous_change_orders_total: "Previous change orders", revised_contract_sum: "New contract sum",
-  schedule_impact_days: "Schedule impact", revised_completion_date: "New completion date", status: "Status",
-  contractor_signed: "Contractor signed", owner_signed: "Owner signed",
-};
-const MISSING = {
-  no_quote: "the document doesn't state it",
-  symbol_only: "its quote is only a symbol",
-  not_found: "its quote isn't on the visible page",
-  no_text: "no readable text on that page",
-};
-const label = (name) => LABELS[name] || name.replace(/_/g, " ");
+const state = { file: null, url: null, kind: null, ext: "", text: "", sample: null, result: null };
 
-const state = { file: null, url: null, kind: null, ext: "", text: "", sample: null, result: null, selected: null, reviewOnly: false, numbers: {} };
-
-// ---------- formatting (map callouts only; the JSON shows raw values) ----------
 const tone = (c) => c >= 0.85 ? "good" : c >= THRESHOLD ? "warn" : "bad";
 const sizeOf = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
-function money(v, cur) {
-  try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur || "USD" }).format(Number(v)); }
-  catch { return String(v); }
-}
-function show(name, v, cur) {
-  if (v === null || v === undefined || v === "") return null;
-  if (MONEY.has(name)) return money(v, cur);
-  if (typeof v === "boolean") return name.endsWith("_signed") ? (v ? "Signed" : "Not signed") : (v ? "Yes" : "No");
-  if (name === "schedule_impact_days") return Number(v) === 0 ? "No change" : `${Number(v) > 0 ? "+" : ""}${v} days`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-    return new Date(v + "T00:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
-  }
-  if (name === "reason" || name === "status") { const s = String(v).replace(/_/g, " "); return s[0].toUpperCase() + s.slice(1); }
-  return String(v);
-}
-const clip = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
 
 // ---------- choosing a document ----------
 function kindOf(name) {
@@ -369,109 +288,31 @@ $("file").onchange = (e) => setFile(e.target.files[0] || null);
 $("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 $("text").oninput = () => { state.sample = null; if ($("text").value && state.file) { setFile(null); $("file").value = ""; } };
 
-// ---------- original-file preview ----------
-function openPreview() {
-  const body = $("dlgBody");
-  $("dlgName").textContent = state.file ? state.file.name : "Pasted text";
-  if (state.file && state.kind === "pdf") body.innerHTML = `<iframe title="Original document" src="${state.url}#view=FitH"></iframe>`;
-  else if (state.file && state.kind === "image") body.innerHTML = BROWSER_IMAGES.includes(state.ext)
+// ---------- the original document ----------
+function originalHTML() {
+  if (state.file && state.kind === "pdf") return `<iframe title="Original document" src="${state.url}#view=FitH"></iframe>`;
+  if (state.file && state.kind === "image") return BROWSER_IMAGES.includes(state.ext)
     ? `<div class="img-wrap"><img src="${state.url}" alt="Uploaded document" title="Click to zoom"></div>`
-    : `<pre>Your browser can't display ${esc(state.ext.toUpperCase())} files. The document panel shows the converted page.</pre>`;
-  else body.innerHTML = `<pre>${esc(state.text || $("text").value)}</pre>`;
+    : `<p class="note">Your browser can't display ${esc(state.ext.toUpperCase())} files, but the extraction read it.</p>`;
+  return `<pre>${esc(state.text || $("text").value)}</pre>`;
+}
+function showOriginal(body) {
+  body.innerHTML = originalHTML();
   body.querySelectorAll("img").forEach((img) => img.onclick = () => img.classList.toggle("zoomed"));
+}
+function openPreview() {
+  $("dlgName").textContent = state.file ? state.file.name : "Pasted text";
+  showOriginal($("dlgBody"));
   $("dialog").showModal();
 }
 $("previewBtn").onclick = openPreview;
 $("thumb").onclick = openPreview;
-$("originalBtn").onclick = openPreview;
 $("dlgClose").onclick = () => $("dialog").close();
 $("dialog").addEventListener("click", (e) => { if (e.target === $("dialog")) $("dialog").close(); });
-
-// ---------- the document map ----------
-// Page images are drawn 1000 units wide; callouts live in a gutter to the right.
-const PW = 1000, GUT = 470, CARD_X = PW + 46, CARD_W = GUT - 62, CARD_H = 70, GAP = 10;
-
-function ellipsePoint(cx, cy, rx, ry, tx, ty) {
-  const dx = tx - cx, dy = ty - cy;
-  const t = 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2);
-  return [cx + dx * t, cy + dy * t];
+function renderDocument() {
+  $("docName").textContent = state.file ? state.file.name : "Pasted text";
+  showOriginal($("docBody"));
 }
-
-function renderMap() {
-  const r = state.result, pv = r.preview, cur = r.change_order.currency;
-  const shown = (name) => !state.reviewOnly || r.fields[name].confidence < THRESHOLD;
-  const sheets = pv.pages.map((pg, i) => {
-    const page = i + 1, H = PW * pg.height / pg.width;
-    const items = Object.entries(pv.marks).filter(([name, m]) => m.page === page && shown(name)).map(([name, m]) => {
-      const [x0, y0, x1, y1] = m.box;
-      const bx = x0 * PW, by = y0 * H, bw = (x1 - x0) * PW, bh = (y1 - y0) * H;
-      return { name, f: r.fields[name], cx: bx + bw / 2, cy: by + bh / 2, rx: bw / 2 + 12, ry: Math.max(bh / 2 + 9, 16) };
-    }).sort((a, b) => a.cy - b.cy);
-
-    // Callouts sit level with their circle, pushed down to clear the one above,
-    // then pulled back up if the last one runs off the page.
-    let y = 0;
-    for (const it of items) { it.ly = Math.max(it.cy - CARD_H / 2, y); y = it.ly + CARD_H + GAP; }
-    if (y - GAP > H) {
-      let limit = H;
-      for (let k = items.length - 1; k >= 0; k--) { const it = items[k]; it.ly = Math.min(it.ly, limit - CARD_H); limit = it.ly - GAP; }
-      const top = items.length ? items[0].ly : 0;
-      if (top < 0) items.forEach((it) => it.ly -= top);   // still too many: start at the top and let the sheet grow
-    }
-    const VH = Math.max(H, items.length ? items[items.length - 1].ly + CARD_H + 8 : H);
-
-    const marks = items.map((it) => {
-      const n = state.numbers[it.name], t = tone(it.f.confidence);
-      const ax = CARD_X, ay = it.ly + CARD_H / 2;
-      const [px, py] = ellipsePoint(it.cx, it.cy, it.rx, it.ry, ax, ay);
-      const c1 = ax - Math.max(40, (ax - px) * 0.45), c2 = px + Math.max(40, (ax - px) * 0.35);
-      const val = clip(show(it.name, it.f.value, cur) ?? "Not stated", 26);
-      return `
-        <g class="mk c-${t}" data-field="${it.name}" tabindex="0" role="button" aria-label="${esc(label(it.name))}: ${esc(val)}">
-          <path class="leader" d="M${ax},${ay} C${c1},${ay} ${c2},${py} ${px},${py}" marker-end="url(#ah-${t})"/>
-          <ellipse class="ring" cx="${it.cx}" cy="${it.cy}" rx="${it.rx}" ry="${it.ry}"/>
-          <circle class="pin-c" cx="${it.cx - it.rx + 4}" cy="${it.cy - it.ry + 2}" r="14"/>
-          <text class="pin-t" x="${it.cx - it.rx + 4}" y="${it.cy - it.ry + 2}">${n}</text>
-          <rect class="card" x="${CARD_X}" y="${it.ly}" width="${CARD_W}" height="${CARD_H}" rx="9"/>
-          <circle class="pin-c" cx="${CARD_X + 22}" cy="${it.ly + 23}" r="14"/>
-          <text class="pin-t" x="${CARD_X + 22}" y="${it.ly + 23}">${n}</text>
-          <text class="t-name" x="${CARD_X + 44}" y="${it.ly + 29}">${esc(clip(label(it.name), 22))}</text>
-          <text class="t-conf" x="${CARD_X + CARD_W - 12}" y="${it.ly + 29}">${it.f.confidence.toFixed(2)}</text>
-          <text class="t-val" x="${CARD_X + 14}" y="${it.ly + 56}">${esc(val)}</text>
-          <title>${esc(label(it.name))} (${it.name}): ${esc(show(it.name, it.f.value, cur) ?? "Not stated")}</title>
-        </g>`;
-    }).join("");
-    const how = pv.positions[String(page)];
-    return `
-      <div class="sheet">
-        <div class="sheet-head"><span>Page ${page}</span>${how === "ocr" ? "<span>Positions read with OCR; circles may be slightly off.</span>" : how === "none" ? "<span>No readable text on this page, so nothing could be placed.</span>" : ""}</div>
-        <svg viewBox="0 0 ${PW + GUT} ${VH}" role="img" aria-label="Page ${page} with ${items.length} extracted fields circled">
-          <rect class="gutter" x="${PW}" y="0" width="${GUT}" height="${VH}"/>
-          <image class="page-img" href="${pg.image}" x="0" y="0" width="${PW}" height="${H}"/>
-          ${marks}
-        </svg>
-      </div>`;
-  }).join("");
-
-  const missing = Object.entries(pv.missing).filter(([name]) => shown(name));
-  $("mapBody").innerHTML = sheets + (missing.length ? `
-    <div class="unmapped"><h3>Not shown on the page</h3><ul>${missing.map(([name, why]) =>
-      `<li><b>${esc(label(name))}</b>: ${MISSING[why] || why}</li>`).join("")}</ul></div>` : "");
-
-  $("mapBody").classList.toggle("has-sel", !!state.selected);
-  $("mapBody").querySelectorAll(".mk").forEach((g) => {
-    g.classList.toggle("sel", g.dataset.field === state.selected);
-    g.onclick = () => select(g.dataset.field, { from: "map" });
-    g.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(g.dataset.field, { from: "map" }); } };
-    g.onmouseenter = () => hot(g.dataset.field, true);
-    g.onmouseleave = () => hot(g.dataset.field, false);
-  });
-}
-
-// One SVG defs block for the arrowheads, shared by every page.
-document.body.insertAdjacentHTML("beforeend", `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  ${["good", "warn", "bad"].map((t) => `<marker id="ah-${t}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--${t})"/></marker>`).join("")}
-</defs></svg>`);
 
 // ---------- the extracted JSON ----------
 // Exactly what the user asked for: every field's value and confidence, plus the document's.
@@ -503,8 +344,8 @@ function jsonValue(v, indent) {
   return '<span class="j-punc">{</span>\n' + keys.map((k) => `${pad}<span class="j-key">${esc(JSON.stringify(k))}</span><span class="j-punc">: </span>${jsonValue(v[k], indent + 2)}`).join('<span class="j-punc">,</span>\n') + `\n${end}<span class="j-punc">}</span>`;
 }
 function renderJSON() {
-  const r = state.result, data = simplified(r), marks = r.preview.marks;
-  const line = (code, gut = "", attrs = "") => `<div class="jl"${attrs}><span class="gut">${gut}</span><span class="code">${code}</span></div>`;
+  const data = simplified(state.result);
+  const line = (code) => `<div class="jl"><span class="code">${code}</span></div>`;
   const conf = (c) => `<span class="j-conf ${tone(c)}">${c}</span>`;
   const names = Object.keys(data.fields);
   let html = line('<span class="j-punc">{</span>');
@@ -517,29 +358,21 @@ function renderJSON() {
   html += line('  <span class="j-key">"fields"</span><span class="j-punc">: {</span>');
   names.forEach((name, i) => {
     const f = data.fields[name], comma = i < names.length - 1 ? '<span class="j-punc">,</span>' : "";
-    const n = state.numbers[name];
-    const gut = n ? (marks[name] ? `<span class="pin" style="background:var(--${tone(f.confidence)})">${n}</span>` : `<span class="pin none" title="Not shown on the page">${n}</span>`) : "";
-    const attrs = ` data-field="${name}" class="jl fld${name === state.selected ? " selected" : ""}"`;
     if (name === "line_items") {
       // Line items are a list: show it expanded so each row reads on its own line.
       const body = jsonValue(f.value, 6).split("\n");
       const head = `    <span class="j-key">"line_items"</span><span class="j-punc">: { </span><span class="j-key">"value"</span><span class="j-punc">: </span>`;
       const tail = `<span class="j-punc">, </span><span class="j-key">"confidence"</span><span class="j-punc">: </span>${conf(f.confidence)}<span class="j-punc"> }</span>${comma}`;
-      if (body.length === 1) { html += line(head + body[0] + tail, gut, attrs); return; }
-      html += line(head + body[0], gut, attrs);
+      if (body.length === 1) { html += line(head + body[0] + tail); return; }
+      html += line(head + body[0]);
       body.slice(1, -1).forEach((b) => html += line(b));
       html += line(body[body.length - 1] + tail);
       return;
     }
-    html += line(`    <span class="j-key">${esc(JSON.stringify(name))}</span><span class="j-punc">: { </span><span class="j-key">"value"</span><span class="j-punc">: </span>${jsonValue(f.value, 0)}<span class="j-punc">, </span><span class="j-key">"confidence"</span><span class="j-punc">: </span>${conf(f.confidence)}<span class="j-punc"> }</span>${comma}`, gut, attrs);
+    html += line(`    <span class="j-key">${esc(JSON.stringify(name))}</span><span class="j-punc">: { </span><span class="j-key">"value"</span><span class="j-punc">: </span>${jsonValue(f.value, 0)}<span class="j-punc">, </span><span class="j-key">"confidence"</span><span class="j-punc">: </span>${conf(f.confidence)}<span class="j-punc"> }</span>${comma}`);
   });
   html += line('  <span class="j-punc">}</span>') + line('<span class="j-punc">}</span>');
   $("jsonBody").innerHTML = `<div class="json">${html}</div>`;
-  $("jsonBody").querySelectorAll(".jl.fld").forEach((el) => {
-    el.onclick = () => select(el.dataset.field, { from: "json" });
-    el.onmouseenter = () => hot(el.dataset.field, true);
-    el.onmouseleave = () => hot(el.dataset.field, false);
-  });
 }
 const jsonText = () => JSON.stringify(simplified(state.result), null, 2);
 $("copyJson").onclick = async () => {
@@ -553,25 +386,6 @@ $("dlJson").onclick = () => {
   a.download = (state.result.source || "result").replace(/\.[^.]+$/, "") + ".json";
   a.click();
 };
-
-// ---------- linking the two panels ----------
-function hot(name, on) {
-  document.querySelectorAll(`[data-field="${name}"]`).forEach((el) => el.classList.toggle("hot", on));
-}
-function select(name, { from } = {}) {
-  state.selected = state.selected === name ? null : name;
-  $("mapBody").classList.toggle("has-sel", !!state.selected);
-  document.querySelectorAll(".mk").forEach((g) => g.classList.toggle("sel", g.dataset.field === state.selected));
-  document.querySelectorAll(".jl.fld").forEach((el) => el.classList.toggle("selected", el.dataset.field === state.selected));
-  if (!state.selected) return;
-  if (from !== "map") $("mapBody").querySelector(`.mk[data-field="${name}"] ellipse`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-  if (from !== "json") $("jsonBody").querySelector(`.jl[data-field="${name}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-}
-document.querySelectorAll("[data-filter]").forEach((b) => b.onclick = () => {
-  state.reviewOnly = b.dataset.filter === "review";
-  document.querySelectorAll("[data-filter]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  renderMap();
-});
 
 // ---------- samples ----------
 async function loadSamples() {
@@ -593,7 +407,6 @@ const STEPS = [
   { id: "validate", label: "Checking the math", note: "Line items, subtotal, total and the contract sum." },
   { id: "repair", label: "Re-reading to fix what didn't add up", optional: true },
   { id: "score", label: "Scoring confidence for each field" },
-  { id: "map", label: "Marking the fields on the page" },
 ];
 const progress = { current: null, seen: new Set(), info: {}, bar: {}, failed: false };
 // The validator's check codes, in words (see validate.py).
@@ -621,8 +434,9 @@ function renderTimeline() {
       const checks = [...new Set(progress.info.repair.checks)].map((c) => CHECKS[c] || c.replace(/_/g, " "));
       note = `On the first read ${checks.join("; ")}. The model is reading it again with those checks in mind.`;
     }
-    if (s.id === "map" && progress.info.map?.ocr) note = "Reading word positions on the scan.";
-    if (status === "done" && s.id !== "repair") note = "";
+    if (s.id === "read" && progress.info.read?.ocr)
+      note = status === "done" ? "Scan read with Docling (IBM watsonx)." : "Reading the scan with Docling (IBM watsonx)…";
+    if (status === "done" && s.id !== "repair" && !(s.id === "read" && progress.info.read?.ocr)) note = "";
     const icon = status === "done" ? "✓" : status === "failed" ? "✕" : "";
     const live = status === "active" && (s.id === "extract" || s.id === "repair") ? liveDetail(s.id) : "";
     return `<li class="${status}"><span class="dot" aria-hidden="true">${icon}</span><span class="what"><b>${s.label}</b>${note ? `<small>${esc(note)}</small>` : ""}${live}</span></li>`;
@@ -697,13 +511,9 @@ $("go").onclick = async () => {
   try {
     const body = await extractWithProgress(fd);
     $("timeline").hidden = true;
-    state.result = body; state.selected = null; state.reviewOnly = false;
-    document.querySelectorAll("[data-filter]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.filter === "all")));
-    // Number every field in output order; the same number pins the circle and the JSON line.
-    state.numbers = {};
-    Object.keys(body.fields).filter((k) => k !== "line_items").forEach((k, i) => state.numbers[k] = i + 1);
+    state.result = body;
     $("workspace").hidden = false;
-    renderBanner(); renderMap(); renderJSON();
+    renderBanner(); renderDocument(); renderJSON();
     $("workspace").scrollIntoView({ behavior: "smooth" });
   } catch (err) {
     progress.failed = true; renderTimeline();

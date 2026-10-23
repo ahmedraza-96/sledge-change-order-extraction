@@ -77,16 +77,6 @@ def test_image_upload_accepted(client):
     assert "Demo mode only has recorded output" in r.json()["detail"]
 
 
-def test_extract_returns_field_map(client):
-    doc = (FIX / "docs" / "simple_co.txt").read_bytes()
-    body = client.post("/api/extract", data={"provider": "demo"},
-                       files={"file": ("simple_co.txt", doc, "text/plain")}).json()
-    pv = body["preview"]
-    assert pv["pages"][0]["image"].startswith("data:image/png;base64,")
-    # Every field with a quote is either circled or listed with the reason it isn't.
-    quoted = {k for k, f in body["fields"].items() if k != "line_items" and f["evidence"]}
-    assert quoted <= set(pv["marks"]) | set(pv["missing"])
-    assert pv["marks"]["total_change_amount"]["scope"] == "value"
 
 
 def test_provider_is_picked_automatically(client, monkeypatch):
@@ -113,9 +103,9 @@ def test_stream_reports_real_steps_then_the_result(client):
     events = [json.loads(line) for line in r.text.splitlines()]
     steps = [e["step"] for e in events if "step" in e]
     # misread_co fails its checks on the first read, so the repair step appears.
-    assert steps == ["read", "extract", "validate", "repair", "score", "map"]
+    assert steps == ["read", "extract", "validate", "repair", "score"]
     assert events[[e.get("step") for e in events].index("repair")]["checks"]
-    assert "result" in events[-1] and events[-1]["result"]["preview"]["marks"]
+    assert "result" in events[-1] and events[-1]["result"]["fields"]["total_change_amount"]["value"]
 
 
 def test_stream_reports_extraction_errors(client):

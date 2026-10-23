@@ -7,19 +7,15 @@ import queue
 import re
 import tempfile
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
-from . import locate, pipeline
+from . import pipeline
 from .cli import SUFFIXES
 from .extract import ExtractionError, FixtureExtractor
-from .ingest import load
 from .providers import DEFAULT_MODELS, Provider, has_key, make_extractor
-
-_MAP_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="field-map")
 
 STATIC = Path(__file__).parent / "static"
 # Demo mode replays the recorded LLM output the tests use, so it needs no key —
@@ -66,14 +62,9 @@ class _Job:
         self.filename, self.data, self.extractor, self.provider = filename, data, extractor, provider
 
     def run(self, on_step=None) -> dict:
-        step = on_step or (lambda name, **info: None)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / self.filename
             path.write_bytes(self.data)
-            doc = load(path)
-            # Word positions for the field map. On scans and photos this is OCR (~16 s/page), so it
-            # runs while the model call (usually longer) is in flight instead of after it.
-            layout = _MAP_POOL.submit(locate.layout, doc)
             try:
                 result = pipeline.run(path, self.extractor, on_step=on_step)
             except ExtractionError as e:
@@ -81,8 +72,6 @@ class _Job:
                     raise ExtractionError(f"Demo mode only has recorded output for the sample documents "
                                           f"({', '.join(SAMPLES)}). {e}") from e
                 raise
-            step("map", ocr=bool(doc.scanned_pages))
-            result["preview"] = locate.preview(layout.result(), result["fields"])
         result["source"] = self.filename  # not the temp path
         return result
 

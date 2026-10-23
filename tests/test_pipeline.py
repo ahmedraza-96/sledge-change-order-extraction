@@ -481,12 +481,6 @@ def test_image_is_sent_to_the_model(tmp_path):
     assert "no text layer" in blocks[-1]["text"]
 
 
-def test_fields_report_the_regex_cross_check():
-    r = pipeline.run(FIX / "docs" / "simple_co.txt", FixtureExtractor(FIX / "llm"))
-    assert r["fields"]["revised_contract_sum"]["cross_check"] is True   # "Contract Sum including this Change Order"
-    assert r["fields"]["project_name"]["cross_check"] is None           # no regex for it
-    misread = pipeline.run(FIX / "docs" / "misread_co.txt", FixtureExtractor(FIX / "llm"), allow_repair=False)
-    assert misread["fields"]["change_order_number"]["cross_check"] is True
 
 
 class _Replay:

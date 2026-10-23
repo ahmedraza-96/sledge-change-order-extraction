@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from . import heuristics
+from . import docling_ocr, heuristics
 from .confidence import REVIEW_THRESHOLD, document_confidence, field_confidence, line_items_confidence
 from .extract import Extractor, LLMResult
 from .ingest import Document, load
@@ -37,7 +37,7 @@ def run(path: str | Path, extractor: Extractor, allow_repair: bool = True,
     step = on_step or (lambda name, **info: None)
     t0 = time.perf_counter()
     step("read")
-    doc = load(path)
+    doc = load(path, on_ocr=lambda: step("read", ocr=True))
     step("extract")
     calls: list[LLMResult] = [extractor.extract(doc, progress=lambda **info: step("extract", **info))]
     raw = calls[0].extraction
@@ -78,8 +78,6 @@ def build_result(doc: Document, raw: RawExtraction, typed: Typed, issues: list[I
             "evidence": f.evidence,
             "page": f.page,
             "model_confidence": f.confidence,
-            # Did the independent regex extractor confirm it? None = it had no opinion.
-            "cross_check": heuristics.agrees(name, value, candidates),
             "reasons": reasons,
         }
     li_conf, li_reasons = line_items_confidence(raw, typed, doc, issues)
@@ -112,6 +110,10 @@ def build_result(doc: Document, raw: RawExtraction, typed: Typed, issues: list[I
         "meta": {
             "input_kind": doc.kind,
             "scanned_pages": doc.scanned_pages,
+            "ocr_pages": doc.ocr_pages,
+            # Present only when hosted OCR was tried; "error" says why it gave no text.
+            **({"ocr": {"engine": docling_ocr.ENGINE, "error": doc.ocr_error}}
+               if doc.ocr_pages or doc.ocr_error else {}),
             "provider": calls[-1].provider,
             "model": calls[-1].model,
             "llm_calls": len(calls),

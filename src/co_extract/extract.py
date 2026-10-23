@@ -71,8 +71,8 @@ class Extractor(Protocol):
 
 
 def wants_pdf(doc: Document, send_pdf: bool) -> bool:
-    """Attach the PDF when asked to, and always for scans — they have no text layer to read."""
-    return bool(doc.pdf_bytes) and (send_pdf or doc.is_scanned)
+    """Attach the PDF when asked to, and always for scans — their text is missing or OCR'd."""
+    return bool(doc.pdf_bytes) and (send_pdf or doc.is_scanned or bool(doc.ocr_pages))
 
 
 def document_prompt(doc: Document) -> str:
@@ -81,6 +81,9 @@ def document_prompt(doc: Document) -> str:
     if doc.is_scanned:
         note = (f"Pages {doc.scanned_pages} have no text layer (scanned). Read them from the attached PDF; "
                 "for evidence, transcribe the supporting text as it appears on the page.\n")
+    if doc.ocr_pages:
+        note += (f"Pages {doc.ocr_pages} were OCR'd from a scan; their text may contain recognition errors. "
+                 "Prefer the attached PDF image where they disagree.\n")
     return (f"{note}<document source=\"{Path(doc.source).name}\">\n{doc.tagged_text()}\n</document>\n\n"
             "Extract the change order.")
 

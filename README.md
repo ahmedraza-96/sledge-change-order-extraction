@@ -74,11 +74,19 @@ first pass. Validation catches both and the repair pass fixes them (`meta.repair
 uv run co-extract serve          # then open http://127.0.0.1:8000
 ```
 
-Upload a PDF, an image (PNG/JPG/TIFF/WebP — e.g. a phone photo), .txt or .eml, or paste the text, pick a provider and click **Extract**. The page shows
-document confidence, the fields that need review, and a table of every field with its value,
-confidence (red below 0.70), evidence quote and the reasons behind the score, plus line items,
-validation issues and a JSON download. Providers without a key in `.env` are greyed out; **Demo**
-replays the recorded fixtures for the bundled samples and needs no key.
+Upload a PDF, an image (PNG/JPG/TIFF/WebP, e.g. a phone photo), .txt or .eml, or paste the text, and
+click **Extract**. The model is chosen automatically: OpenRouter when `OPENROUTER_API_KEY` is set,
+otherwise the next provider with a key. While it runs, a timeline shows each real step of the pipeline,
+with a live count of fields as the model writes them (OpenRouter streams). The result shows the original
+document on the left and, on the right, the extracted JSON: each field's value and confidence
+(colour-coded, red below 0.70), the document confidence, and a warning if the document isn't a change
+order. Copy and Download give exactly that JSON; the CLI gives the full output with evidence, reasons
+and validation issues. The "Try a sample" links replay recorded results, so they never spend quota.
+
+**Scans and photos (optional OCR).** Set `DOCLING_SERVICE_URL` and `DOCLING_SERVICE_API_KEY` (Docling for IBM
+watsonx) and pages with no text layer are OCR'd by that hosted service, so their values can be checked against
+the page. Text PDFs, emails and .txt never go to it. If OCR fails, extraction continues on the image alone and
+`meta.ocr.error` says why.
 
 ## Output (abridged; numbers illustrative)
 

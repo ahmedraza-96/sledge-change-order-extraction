@@ -9,7 +9,8 @@ low weight. Most of the signal comes from things we can check:
 - agreement: does an independent regex extractor find the same value?
 
 Scanned pages cannot be grounded against a text layer, so they get a neutral
-grounding score and a small penalty.
+grounding score and a small penalty. Pages whose text came from OCR are grounded
+normally, with a milder penalty: OCR can misread a digit too.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ REVIEW_THRESHOLD = 0.7
 W_GROUNDING, W_MODEL, W_CHECKS = 0.5, 0.2, 0.3
 SCANNED_GROUNDING = 0.7  # neutral grounding when there is no text layer to check against
 SCANNED_PENALTY = 0.9
+OCR_PENALTY = 0.95  # grounded, but against OCR text rather than a native text layer
 UNSUPPORTED_CAP = 0.3  # value not found in its own evidence quote: likely hallucinated
 ISSUE_PENALTY = 0.6  # per failed validation rule involving the field
 DISAGREE_PENALTY = 0.5
@@ -108,6 +110,9 @@ def field_confidence(name: str, f: ExtractedField, value, parse_failed: bool, do
         reasons.append("scanned page: evidence not verifiable against a text layer")
     elif g < 0.8:
         reasons.append(f"evidence quote only weakly matches the document ({g:.2f})")
+    ocr = not scanned and f.page in doc.ocr_pages
+    if ocr:
+        reasons.append("page text from OCR")
 
     score = W_GROUNDING * g + W_MODEL * model_conf + W_CHECKS
     if agreement is True:
@@ -121,6 +126,8 @@ def field_confidence(name: str, f: ExtractedField, value, parse_failed: bool, do
             reasons.append(f"involved in failed check: {issue.code}")
     if scanned:
         score *= SCANNED_PENALTY
+    elif ocr:
+        score *= OCR_PENALTY
     if value_in_evidence(name, value, f.evidence) is False:
         score = min(score, UNSUPPORTED_CAP)
         reasons.append("value does not appear in its own evidence quote")

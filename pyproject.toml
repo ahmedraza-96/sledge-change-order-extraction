@@ -6,9 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=2.1.0",
+    "docling-client>=2.142.1",
     "fastapi>=0.161.1",
     "google-genai>=2.32.0",
-    "onnxruntime>=1.31.0",
     "openai>=3.37.0",
     "pdfplumber>=0.11.10",
     "pillow>=13.0.0",
@@ -17,9 +17,8 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "python-multipart>=0.0.32",
     "rapidfuzz>=3.14.6",
-    "rapidocr>=3.10.0",
     "reportlab>=5.0.1",
-    "typer>=0.27.3",
+    "typer>=0.19",
     "uvicorn>=0.54.0",
 ]
 

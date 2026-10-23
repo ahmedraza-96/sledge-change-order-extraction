@@ -19,6 +19,9 @@ ingest ──► extract (LLM)    ──► normalize + validate ──► repai
    layer is treated as scanned. Images (PNG/JPG/TIFF/WebP — phone photos, fax scans) are converted to
    PDF pages first, upright per their EXIF rotation and capped at 2400 px, so they take exactly the
    scanned-PDF path from here on: the page image is sent to the model, which reads it directly.
+   If Docling for IBM watsonx is configured, pages with no text layer are also OCR'd by that hosted
+   service (text PDFs, emails and .txt never go to it), so the model gets the image *and* the text,
+   and the page's quotes can be verified. Any OCR failure falls back to the image-only path.
    `.eml` files drop the quoted reply chain, because earlier messages often hold
    superseded numbers.
 2. **Extract.** One LLM call with structured outputs against a Pydantic schema, so the response
@@ -63,9 +66,10 @@ ingest ──► extract (LLM)    ──► normalize + validate ──► repai
    - **Rules:** each failed rule involving the field multiplies its score by 0.6.
    - **Independent cross-check:** a labelled-value regex extractor. Agreement adds 0.1;
      disagreement halves the score.
-   - **Scanned pages and photos:** these can't be grounded, because there is no text layer to check
-     a quote against. They get a neutral grounding score and a small penalty, which deliberately
-     pushes them toward review.
+   - **Scanned pages and photos:** with hosted Docling OCR they are grounded against the OCR text,
+     with a milder penalty (OCR can misread a digit too). Without it, or if OCR fails, there is no
+     text to check a quote against: they get a neutral score and a small penalty, which
+     deliberately pushes them toward review.
 
    Fields below 0.7 go to `needs_review`. Document confidence is driven by the weakest *critical*
    field (CO number, amount, contract sums).
@@ -109,7 +113,7 @@ They run offline.
 | Credit sign lost (`($3,200)` → `3200`) | Deterministic parser handles parens/CR; `credit_sign` rule | Credit implied only by prose |
 | Misread digit / transposition | Value-in-evidence cap; arithmetic rules; repair pass | A misread in a field no rule touches (e.g. project number) is caught only if the quote is exact |
 | Hallucinated value for a missing field | "null over guess" prompt; evidence must ground; null-vs-regex check | Plausible value with a plausible quote on a scan |
-| Scans / phone photos | Page is sent as an image to a vision model; photos are EXIF-rotated and size-capped first; confidence is discounted | No text layer to ground against, and the regex cross-check has nothing to read, so scans lean on review. See OCR under *What I'd do next* |
+| Scans / phone photos | Page is sent as an image to a vision model (photos EXIF-rotated and size-capped first); with Docling for IBM watsonx configured, the page is also OCR'd so quotes can be grounded and the regex cross-check can run | OCR misreads weaken grounding, so those fields drift toward review rather than passing silently. Without OCR, scans get a discounted neutral score. Scans are sent to IBM, which may not suit every customer |
 | Handwritten overrides / strike-throughs | Model sees the page image; prompt says latest edit wins; surfaced in `notes` | Ambiguous markups. These *should* go to a human |
 | Superseded numbers in email threads | Quoted chain stripped at ingest; prompt warning | Forwarded threads without `>` quoting |
 | Document's own math is wrong | Rules fire, re-read confirms, values kept as printed and flagged | — (correct behaviour is to flag) |
@@ -129,12 +133,12 @@ measured token counts). For backlog processing the Batch API halves this.
 
 ## Web UI
 
-`uv run co-extract serve` starts a small FastAPI app at http://127.0.0.1:8000. Upload a PDF / .txt /
-.eml or paste text, pick a provider, and the page shows:
-- document confidence and the `needs_review` list,
-- every field with its value, a colour-coded confidence bar, the evidence quote with its page, and
-  the reasons behind the score,
-- line items, validation issues, the model's notes, and the raw JSON.
+`uv run co-extract serve` starts a small FastAPI app at http://127.0.0.1:8000. Upload a document
+or paste text and click Extract; the model is picked automatically. Progress is streamed from the
+server as the pipeline actually advances (read, extract, validate, repair, score), and with OpenRouter
+the model's own output is streamed too, so the page counts fields as they are written instead of
+showing a frozen spinner. The result is the original document beside a simplified JSON: value and
+confidence per field, the document confidence, and a warning when the document is not a change order.
 
 It calls the same `pipeline.run` as the CLI. It is a thin view, not a second code path. A **Demo**
 provider replays the recorded fixtures so it works without any API key.
@@ -192,11 +196,10 @@ Two things surfaced immediately that are worth recording:
   instead of hand-setting them. The weights are currently shared across providers, which the Gemini
   numbers show is wrong: a model whose self-report is flat needs `W_MODEL` near zero and the freed
   weight moved to grounding. Fitting per provider falls out of doing this properly.
-- **OCR scanned pages for grounding,** so quotes on scans can be checked like text pages. This was
-  built and measured with Docling and then removed. On the scanned sample it raised document
-  confidence from 0.76 (every field the same unverifiable score) to 0.87 (each field actually
-  checked), but it cost about 90 s per page on CPU, against 15–60 s for the whole model call. It's
-  worth it only on a GPU or with a much faster OCR engine.
+- **Measure hosted OCR on the eval set.** Docling for IBM watsonx is integrated for scans and
+  photos. Running Docling locally earlier raised the scanned sample from 0.76 to 0.87 document
+  confidence (every field checked instead of the same flat score) but cost about 90 s a page on CPU,
+  which is why it moved to the hosted service. The eval should be re-run with it on.
 - **Split multi-CO packets** and run extraction on each.
 - **Per-customer layout hints** (few-shot from their past COs), with prompt caching for the static
   prefix.
