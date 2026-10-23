@@ -82,8 +82,8 @@ def document_prompt(doc: Document) -> str:
         note = (f"Pages {doc.scanned_pages} have no text layer (scanned). Read them from the attached PDF; "
                 "for evidence, transcribe the supporting text as it appears on the page.\n")
     if doc.ocr_pages:
-        note += (f"Pages {doc.ocr_pages} were OCR'd from a scan; their text may contain recognition errors. "
-                 "Prefer the attached PDF image where they disagree.\n")
+        note += (f"The text of pages {doc.ocr_pages} was read by OCR and may contain recognition errors "
+                 "(for example a misread digit). If an image of the page is attached, prefer it where they disagree.\n")
     return (f"{note}<document source=\"{Path(doc.source).name}\">\n{doc.tagged_text()}\n</document>\n\n"
             "Extract the change order.")
 

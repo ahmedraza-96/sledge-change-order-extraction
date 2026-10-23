@@ -435,7 +435,7 @@ function renderTimeline() {
       note = `On the first read ${checks.join("; ")}. The model is reading it again with those checks in mind.`;
     }
     if (s.id === "read" && progress.info.read?.ocr)
-      note = status === "done" ? "Scan read with Docling (IBM watsonx)." : "Reading the scan with Docling (IBM watsonx)…";
+      note = status === "done" ? "Read with Docling (IBM watsonx)." : "Reading the document with Docling (IBM watsonx)…";
     if (status === "done" && s.id !== "repair" && !(s.id === "read" && progress.info.read?.ocr)) note = "";
     const icon = status === "done" ? "✓" : status === "failed" ? "✕" : "";
     const live = status === "active" && (s.id === "extract" || s.id === "repair") ? liveDetail(s.id) : "";
@@ -525,12 +525,19 @@ $("go").onclick = async () => {
 function renderBanner() {
   const ws = docWarnings(state.result), banner = $("banner");
   const notCO = ws.some((w) => w.code === "not_a_change_order");
-  banner.hidden = !ws.length;
-  if (!ws.length) return;
+  // Docling was tried and gave no text: the values came from the image (or the file's own text)
+  // and couldn't be checked against OCR text, so say so rather than fall back silently.
+  const ocrError = state.result.meta?.ocr?.error;
+  const ocrNote = ocrError
+    ? `<b>Docling couldn't read this document, so it was read without OCR.</b><span>${esc(ocrError)}. The values may still be right, but confidence is lower because they couldn't be checked against OCR text.</span>`
+    : "";
+  banner.hidden = !ws.length && !ocrNote;
+  if (banner.hidden) return;
   banner.className = "banner " + (notCO ? "bad" : "warn");
   banner.innerHTML = notCO
     ? `<b>This doesn't look like a change order.</b><span>The model still filed what it found into change-order fields, so treat these values as unreliable. Every confidence is set to 0 and the document needs a person to review it.</span>`
-    : ws.map((w) => `<b>${esc(w.text)}</b>`).join("") + "<span>Check the document before using these values.</span>";
+    : ws.length ? ws.map((w) => `<b>${esc(w.text)}</b>`).join("") + "<span>Check the document before using these values.</span>" + ocrNote
+    : ocrNote;
 }
 function showError(msg) { $("error").textContent = msg; $("error").hidden = false; }
 

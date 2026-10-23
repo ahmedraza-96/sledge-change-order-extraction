@@ -7,6 +7,10 @@ shared ``SYSTEM_PROMPT`` / ``document_prompt()`` / ``repair_prompt()`` text, ret
 
 Two OpenRouter-specific choices:
 
+- **A vision model reads every document.** PDFs and photos go as page images alongside
+  their text. A benchmark on 10 scanned-looking samples (scripts/benchmark_ocr.py) found
+  this beat Docling OCR followed by a text model: 95.5% against 91.9% field accuracy, half
+  the confidently-wrong fields, and faster.
 - **Fallbacks.** Free models are rate-limited and sometimes overloaded, so the request
   names a ``models`` list; OpenRouter moves to the next one when a model errors.
   ``LLMResult.model`` records which one actually answered.
@@ -33,17 +37,16 @@ from .extract import (
     LLMResult,
     document_prompt,
     repair_prompt,
-    wants_pdf,
 )
 from .ingest import Document
 from .schema import FIELD_SPECS, Issue, RawExtraction
 
 BASE_URL = "https://openrouter.ai/api/v1"
-# Chosen from the free models that accept images *and* enforce a JSON schema.
-# Nemotron 3.5 Super VL is the one with published document/OCR results; the others
-# take over when it is rate-limited or down. The last one is text-only.
-OPENROUTER_MODEL = "nvidia/nemotron-3.5-super-vl:free"
-OPENROUTER_FALLBACKS = ("dots-studio/dots-3-note-preview:free", "nvidia/nemotron-3-super-120b-a12b:free")
+# Free models that read images *and* enforce a JSON schema. Nemotron 3.5 Super VL has
+# published document/OCR results; the fallback takes over when it is rate-limited or down.
+# All ":free": OpenRouter bills a paid fallback at its own rate, so never add one.
+OPENROUTER_MODELS = ("nvidia/nemotron-3.5-super-vl:free", "dots-studio/dots-3-note-preview:free")
+OPENROUTER_MODEL = OPENROUTER_MODELS[0]
 MAX_OUTPUT_TOKENS = 16000
 PAGE_DPI = 150
 MAX_PAGE_IMAGES = 10  # change orders are short; this bounds the request size
@@ -59,11 +62,13 @@ def page_images(doc: Document) -> list[str]:
     return out
 
 
-def build_messages(doc: Document, send_pdf: bool,
-                   repair: tuple[RawExtraction, list[Issue]] | None) -> list[dict]:
-    """Wrap the shared prompt text in Chat Completions messages (cf. ``extract.build_content``)."""
+def build_messages(doc: Document, repair: tuple[RawExtraction, list[Issue]] | None) -> list[dict]:
+    """Wrap the shared prompt text in Chat Completions messages (cf. ``extract.build_content``).
+
+    PDFs and photos send every page image along with the text; text and email send text only.
+    """
     content: list[dict] = []
-    if wants_pdf(doc, send_pdf):
+    if doc.pdf_bytes:
         content += [{"type": "image_url", "image_url": {"url": url}} for url in page_images(doc)]
     content.append({"type": "text", "text": document_prompt(doc)})
     if repair:
@@ -72,34 +77,39 @@ def build_messages(doc: Document, send_pdf: bool,
 
 
 class OpenRouterExtractor:
-    def __init__(self, client: openai.OpenAI | None = None, model: str = OPENROUTER_MODEL,
-                 fallbacks: tuple[str, ...] = OPENROUTER_FALLBACKS, send_pdf: bool = True):
+    def __init__(self, client: openai.OpenAI | None = None, model: str | None = None):
+        """``model`` overrides the first choice; the rest of the chain stays as fallbacks."""
         # Reads OPENROUTER_API_KEY. A couple of SDK retries ride out a brief 429/503.
         self.client = client or openai.OpenAI(
             base_url=BASE_URL, api_key=_api_key(), max_retries=2,
             default_headers={"X-Title": "co-extract"},
         )
         self.model = model
-        self.fallbacks = [m for m in fallbacks if m != model]
-        self.send_pdf = send_pdf
+
+    def _models(self) -> list[str]:
+        if not self.model:
+            return list(OPENROUTER_MODELS)
+        return [self.model, *[m for m in OPENROUTER_MODELS if m != self.model]]
 
     def extract(self, doc: Document, repair: tuple[RawExtraction, list[Issue]] | None = None,
                 progress: Callable[..., None] | None = None) -> LLMResult:
         # Streamed so a caller can show real progress: the model's reasoning arrives first,
         # then the JSON, whose field keys we count as they appear.
         tracker = _Progress(progress)
+        models = self._models()
+        extra = {
+            "models": models,
+            # Only route to providers that honour the JSON schema, never one that ignores it.
+            "provider": {"require_parameters": True},
+        }
         try:
             with self.client.chat.completions.stream(
-                model=self.model,
-                messages=build_messages(doc, self.send_pdf, repair),
+                model=models[0],
+                messages=build_messages(doc, repair),
                 response_format=RawExtraction,
                 max_tokens=MAX_OUTPUT_TOKENS,
                 stream_options={"include_usage": True},
-                extra_body={
-                    "models": [self.model, *self.fallbacks],
-                    # Only route to providers that honour the JSON schema, never one that ignores it.
-                    "provider": {"require_parameters": True},
-                },
+                extra_body=extra,
             ) as stream:
                 for event in stream:
                     if event.type == "chunk" and event.chunk.choices:
@@ -141,7 +151,7 @@ class OpenRouterExtractor:
         usage = resp.usage
         return LLMResult(
             extraction=choice.message.parsed,
-            model=resp.model or self.model,
+            model=resp.model or models[0],
             provider="openrouter",
             input_tokens=usage.prompt_tokens if usage else 0,
             output_tokens=usage.completion_tokens if usage else 0,

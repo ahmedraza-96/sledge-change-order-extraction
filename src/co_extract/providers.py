@@ -32,13 +32,14 @@ def make_extractor(provider: Provider, model: str | None = None, fixtures: Path 
     if fixtures:
         return FixtureExtractor(fixtures)
     load_dotenv()
-    model = model or DEFAULT_MODELS[provider]
+    requested, model = model, model or DEFAULT_MODELS[provider]
     if provider is Provider.gemini:
         return GeminiExtractor(model=model, send_pdf=not text_only)
     if provider is Provider.openai:
         return OpenAIExtractor(model=model, send_pdf=not text_only)
     if provider is Provider.openrouter:
-        return OpenRouterExtractor(model=model, send_pdf=not text_only)
+        # It picks text or vision models per document; only an explicit --model overrides that.
+        return OpenRouterExtractor(model=requested)
     return ClaudeExtractor(model=model, send_pdf=not text_only)
 
 

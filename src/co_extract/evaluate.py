@@ -24,7 +24,9 @@ def field_correct(name: str, predicted, truth) -> bool:
     if truth is None or predicted is None:
         return truth is None and predicted is None
     if name == "line_items":
-        return sorted(li["amount"] for li in predicted) == sorted(li["amount"] for li in truth)
+        # A row the model left without an amount is compared as "" (and so never matches a real amount).
+        amounts = lambda rows: sorted(li.get("amount") or "" for li in rows)  # noqa: E731
+        return amounts(predicted) == amounts(truth)
     if name == "change_order_number":
         return _co_key(str(predicted)) == _co_key(str(truth))
     if name == "description":

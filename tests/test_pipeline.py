@@ -407,12 +407,12 @@ def test_openrouter_extractor_request_and_parse():
     r = pipeline.run(FIX / "docs" / "simple_co.txt", ex)
     assert r["change_order"]["total_change_amount"] == "3850.00"
     assert r["meta"]["provider"] == "openrouter"
-    assert r["meta"]["model"] == "nvidia/nemotron-3.5-super-vl:free"
+    assert r["meta"]["model"] == "nvidia/nemotron-3.5-super-vl:free"  # the mock's "served by"
     assert r["meta"]["input_tokens"] == 1234
     body = captured[0]
     assert body["model"] == "nvidia/nemotron-3.5-super-vl:free"
     # Fallbacks follow the primary, and only schema-honouring providers may serve the request.
-    assert body["models"][0] == body["model"] and len(body["models"]) == 3
+    assert body["models"][0] == body["model"] and len(body["models"]) == 2
     assert body["provider"] == {"require_parameters": True}
     assert body["response_format"]["type"] == "json_schema"
     assert body["response_format"]["json_schema"]["strict"] is True
@@ -433,7 +433,7 @@ def test_openrouter_model_override_is_not_duplicated_in_fallbacks():
 
 def test_openrouter_sends_pages_as_images(tmp_path):
     captured: list = []
-    OpenRouterExtractor(client=_mock_openrouter_client(captured, GOOD), send_pdf=False).extract(load(_blank_pdf(tmp_path)))
+    OpenRouterExtractor(client=_mock_openrouter_client(captured, GOOD)).extract(load(_blank_pdf(tmp_path)))
     parts = captured[0]["messages"][1]["content"]
     assert parts[0]["type"] == "image_url"
     assert parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
@@ -537,3 +537,28 @@ def test_pipeline_forwards_model_progress_as_steps():
     pipeline.run(FIX / "docs" / "simple_co.txt", OpenRouterExtractor(client=_mock_openrouter_client([], GOOD)),
                  on_step=lambda name, **info: steps.append((name, info.get("phase"))))
     assert steps.index(("extract", None)) < steps.index(("extract", "writing")) < steps.index(("validate", None))
+
+
+def test_openrouter_uses_the_vision_model_for_every_document(tmp_path):
+    from co_extract.openrouter import OPENROUTER_MODELS
+
+    text_doc, scan = [], []
+    OpenRouterExtractor(client=_mock_openrouter_client(text_doc, GOOD)).extract(load(FIX / "docs" / "simple_co.txt"))
+    OpenRouterExtractor(client=_mock_openrouter_client(scan, GOOD)).extract(load(_blank_pdf(tmp_path)))
+    for body in (text_doc[0], scan[0]):
+        assert body["models"] == list(OPENROUTER_MODELS) and all(m.endswith(":free") for m in body["models"])
+        assert "reasoning" not in body
+    # A text file has no pages to show; a PDF or photo sends its page images.
+    assert not any(p["type"] == "image_url" for p in text_doc[0]["messages"][1]["content"])
+    assert scan[0]["messages"][1]["content"][0]["type"] == "image_url"
+
+
+def test_docling_credentials_alone_do_not_switch_it_on(monkeypatch):
+    from co_extract import docling_ocr
+
+    monkeypatch.setenv("DOCLING_SERVICE_URL", "https://example.test/x")
+    monkeypatch.setenv("DOCLING_SERVICE_API_KEY", "k")
+    assert not docling_ocr.available()
+    monkeypatch.setenv("DOCLING_OCR_ENABLED", "true")
+    assert docling_ocr.available()
+

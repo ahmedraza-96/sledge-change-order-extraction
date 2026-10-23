@@ -82,3 +82,12 @@ def test_heuristics_do_not_cross_lines():
     c = heuristics.extract(text)
     assert "original_contract_sum" not in c  # abstain, rather than guess 212,400.00
     assert heuristics.agrees("original_contract_sum", Decimal("7950000.00"), c) is None
+
+
+def test_line_items_with_a_missing_amount_score_as_wrong_not_crash():
+    from co_extract.evaluate import field_correct
+
+    truth = [{"amount": "1020.00"}, {"amount": "2480.00"}]
+    assert field_correct("line_items", [{"amount": "2480.00"}, {"amount": "1020.00"}], truth)
+    assert not field_correct("line_items", [{"amount": None}, {"amount": "2480.00"}], truth)
+    assert not field_correct("line_items", [{"amount": None}, {"amount": None}], truth)

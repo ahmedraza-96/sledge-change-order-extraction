@@ -11,3 +11,4 @@ def no_hosted_ocr(request, monkeypatch):
         return
     monkeypatch.delenv("DOCLING_SERVICE_URL", raising=False)
     monkeypatch.delenv("DOCLING_SERVICE_API_KEY", raising=False)
+    monkeypatch.delenv("DOCLING_OCR_ENABLED", raising=False)

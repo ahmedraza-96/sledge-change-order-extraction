@@ -1,26 +1,34 @@
-"""Read scanned pages and photos with Docling for IBM watsonx (hosted OCR).
+"""Read documents with Docling for IBM watsonx (hosted OCR). Off unless switched on.
 
-Pages with no text layer can't be grounded or cross-checked, and a text-only model can't
-read them at all. When ``DOCLING_SERVICE_URL`` and ``DOCLING_SERVICE_API_KEY`` are set,
-those pages are sent to IBM's hosted Docling and come back as text, tables kept as rows.
+Opt in with DOCLING_OCR_ENABLED=true (plus the service URL and key). A benchmark on 10
+scanned-looking samples (scripts/benchmark_ocr.py) found the vision model reading the image
+directly was more accurate (95.5% against 91.9%), so it is not the default.
+
+When it is on, ``ingest`` renders every document as page images (text and email typeset
+first) and sends them here; they come back as text, tables kept as rows, and that text is
+what the model reads and what quotes are checked against.
 
 This is best effort: any failure (network, timeout, usage limit, bad key) returns no
-text plus the reason, and the page is handled as a scan exactly as before. Text PDFs,
-emails and .txt never reach this module.
+text plus the reason, and the document keeps its own text (a photo stays a scan).
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from pathlib import Path
+
+log = logging.getLogger("uvicorn.error")  # shows in the `co-extract serve` console
 
 ENGINE = "docling-watsonx"
 JOB_TIMEOUT = 90.0  # seconds for the whole conversion, including the queue
 
 
 def available() -> bool:
-    return bool(os.environ.get("DOCLING_SERVICE_URL") and os.environ.get("DOCLING_SERVICE_API_KEY"))
+    """Switched on and configured. Credentials alone don't turn it on."""
+    return (os.environ.get("DOCLING_OCR_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+            and bool(os.environ.get("DOCLING_SERVICE_URL") and os.environ.get("DOCLING_SERVICE_API_KEY")))
 
 
 def read_pages(pdf_bytes: bytes, page_nos: list[int], name: str = "document.pdf") -> tuple[dict[int, str], str | None]:
@@ -33,15 +41,21 @@ def read_pages(pdf_bytes: bytes, page_nos: list[int], name: str = "document.pdf"
     try:
         doc = _convert(pdf_bytes, (min(page_nos), max(page_nos)), name)
     except Exception as e:  # never let OCR break extraction
-        return {}, f"{type(e).__name__}: {e}"
-    return page_texts(doc, page_nos), None
+        error = f"{type(e).__name__}: {e}"
+        log.warning("Docling OCR failed for %s: %s", name, error)
+        return {}, error
+    texts = page_texts(doc, page_nos)
+    if not texts:
+        log.warning("Docling OCR returned no text for %s (pages %s)", name, page_nos)
+        return {}, "Docling returned no text for these pages"
+    return texts, None
 
 
 def _convert(pdf_bytes: bytes, page_range: tuple[int, int], name: str):
-    from docling.datamodel.service.options import ConvertDocumentsRequestOptions
+    from docling.datamodel.service.options import ConvertDocumentsOptions
     from docling.service_client import DoclingServiceClient
 
-    options = ConvertDocumentsRequestOptions(
+    options = ConvertDocumentsOptions(
         to_formats=["json"],      # the structured document, so text can be split by page
         do_ocr=True,
         force_ocr=True,           # these pages have no usable text layer by definition

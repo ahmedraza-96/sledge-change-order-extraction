@@ -9,7 +9,7 @@ See **[WRITEUP.md](WRITEUP.md)** for the approach, how confidence is computed, a
 
 ```bash
 uv sync
-cp .env.example .env            # add OPENROUTER_API_KEY (free), ANTHROPIC_API_KEY, GEMINI_API_KEY and/or OPENAI_API_KEY
+cp .env.example .env            # add OPENROUTER_API_KEY (free); other providers and Docling are optional
 uv run python scripts/gen_dataset.py                      # generates data/samples + data/truth (not committed)
 uv run co-extract extract data/samples/03_credit.pdf      # JSON to stdout
 uv run co-extract extract data/samples -o out/            # a whole folder
@@ -25,13 +25,11 @@ Extraction runs against Claude (default), Gemini, OpenAI or OpenRouter's free mo
 normalization, validation, the repair pass, confidence scoring — is shared, so the two are directly
 comparable on the same eval. OpenAI defaults to `gpt-5-mini` (`--provider openai`).
 
-**OpenRouter (free).** `--provider openrouter` uses free models only, chosen from the free models
-that accept images *and* enforce a JSON schema: `nvidia/nemotron-3.5-super-vl:free` (the only one
-with published document/OCR results), falling back to `dots-studio/dots-3-note-preview:free` and
-then the text-only `nvidia/nemotron-3-super-120b-a12b:free` when a model is rate-limited or down.
-`meta.model` records which one answered. PDF pages are sent as rendered images, so no paid
-PDF-parsing engine is involved. Free limits: 20 requests/min and 50/day (1000/day once $10 of
-credit has been bought). If every request fails with a 404, allow free-model providers in
+**OpenRouter (free).** `--provider openrouter` uses free models only. A vision model reads every
+document, `nvidia/nemotron-3.5-super-vl:free` with `dots-studio/dots-3-note-preview:free` as the
+fallback: PDFs and photos go as page images alongside their text, and text and email as text.
+`meta.model` records which model answered. Free limits: 20 requests/min and 50/day (1000/day once
+$10 of credit has been bought). If every request fails with a 404, allow free-model providers in
 https://openrouter.ai/settings/privacy. Free endpoints may log prompts, so don't send confidential
 documents through them.
 
@@ -83,10 +81,62 @@ document on the left and, on the right, the extracted JSON: each field's value a
 order. Copy and Download give exactly that JSON; the CLI gives the full output with evidence, reasons
 and validation issues. The "Try a sample" links replay recorded results, so they never spend quota.
 
-**Scans and photos (optional OCR).** Set `DOCLING_SERVICE_URL` and `DOCLING_SERVICE_API_KEY` (Docling for IBM
-watsonx) and pages with no text layer are OCR'd by that hosted service, so their values can be checked against
-the page. Text PDFs, emails and .txt never go to it. If OCR fails, extraction continues on the image alone and
-`meta.ocr.error` says why.
+**Optional: Docling for IBM watsonx OCR (off by default).** With `DOCLING_OCR_ENABLED=true` plus
+`DOCLING_SERVICE_URL` and `DOCLING_SERVICE_API_KEY`, every document is rendered as page images and OCR'd
+by that hosted service, and the OCR text is what the model reads. It is off by default because the
+vision model reading the image directly did better in a benchmark on 10 scanned-looking samples
+(`uv run python scripts/benchmark_ocr.py`, report in `reports/benchmark-ocr.md`):
+
+| | Vision model reads the image | Docling OCR, then a text model |
+|---|---|---|
+| Field accuracy | **95.5%** (210/220) | 91.9% (182/198) |
+| Wrong but confident (at least 0.70) | **5** | 11 |
+| Documents completed | **10/10** | 9/10 |
+| Mean time per document | **38 s** | 64 s |
+
+OCR misreads were copied into the answer and then "verified" against the same misread text, which is
+why Docling had twice as many confidently-wrong fields.
+
+## How confidence is calculated
+
+Every score is computed by our code (`confidence.py`), not taken from the model. The model's own
+self-rating is just one input, worth 20%, because it is poorly calibrated: some models report about
+1.0 on nearly everything.
+
+**Each field (0 to 1):**
+
+```
+score = 0.5 × grounding + 0.2 × model_confidence + 0.3
+```
+
+- **grounding**: how closely the model's evidence quote matches the document text, a fuzzy match
+  from 0 to 1. A quote the model made up doesn't match.
+- **model_confidence**: the model's self-rating for that field.
+- **0.3**: the share for passing the checks. It is then reduced by the adjustments below.
+
+Then, in order:
+
+| Signal | Effect |
+|---|---|
+| Independent regex extractor finds the **same** labelled value | +0.1 (max 1.0) |
+| Regex extractor finds a **different** value | × 0.5 |
+| Each failed validation rule that involves the field (e.g. subtotal + markup + tax ≠ total) | × 0.6 |
+| Page text came from OCR (only when Docling is switched on) | × 0.95 |
+| Page has no text at all (unread scan), so grounding is a neutral 0.7 | × 0.9 |
+| The value doesn't appear inside its own quote (e.g. a misread digit) | capped at 0.3 |
+| The value couldn't be parsed (not a valid amount or date) | 0.1 |
+| `null` (document doesn't state it) | 0.55 + 0.4 × model_confidence, or 0.3 if the regex *did* find a labelled value |
+
+**Line items** share one score. Each row is grounded the same way, and a row whose amount isn't in its
+own quote is capped at 0.3. The score is 0.7 × the weakest row + 0.3 × the average, × 0.6 per failed
+rule involving the line items.
+
+**Document confidence** = 0.6 × the weakest *critical* field (CO number, CO amount, the three contract
+sums) + 0.4 × the average of all fields. It is capped at 0.5 if there is a hard error (e.g. no CO number)
+or several change orders in one file. It is 0 if the document isn't a change order at all, and then
+every field is capped at 0 too.
+
+**Review:** any field below **0.70** is listed in `needs_review`.
 
 ## Output (abridged; numbers illustrative)
 

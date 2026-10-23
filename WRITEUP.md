@@ -19,10 +19,8 @@ ingest ──► extract (LLM)    ──► normalize + validate ──► repai
    layer is treated as scanned. Images (PNG/JPG/TIFF/WebP — phone photos, fax scans) are converted to
    PDF pages first, upright per their EXIF rotation and capped at 2400 px, so they take exactly the
    scanned-PDF path from here on: the page image is sent to the model, which reads it directly.
-   If Docling for IBM watsonx is configured, pages with no text layer are also OCR'd by that hosted
-   service (text PDFs, emails and .txt never go to it), so the model gets the image *and* the text,
-   and the page's quotes can be verified. Any OCR failure falls back to the image-only path.
-   `.eml` files drop the quoted reply chain, because earlier messages often hold
+   Docling for IBM watsonx OCR is available as an opt-in (`DOCLING_OCR_ENABLED`) but off by default; see
+   *OCR or vision?* below for the benchmark that decided it. `.eml` files drop the quoted reply chain, because earlier messages often hold
    superseded numbers.
 2. **Extract.** One LLM call with structured outputs against a Pydantic schema, so the response
    always matches the schema. The default is `claude-opus-5-5`; Gemini and OpenAI sit behind the same
@@ -66,8 +64,8 @@ ingest ──► extract (LLM)    ──► normalize + validate ──► repai
    - **Rules:** each failed rule involving the field multiplies its score by 0.6.
    - **Independent cross-check:** a labelled-value regex extractor. Agreement adds 0.1;
      disagreement halves the score.
-   - **Scanned pages and photos:** with hosted Docling OCR they are grounded against the OCR text,
-     with a milder penalty (OCR can misread a digit too). Without it, or if OCR fails, there is no
+   - **OCR'd pages** (only with Docling switched on): grounded against the OCR text with a milder
+     penalty, because OCR can misread a digit too. Without it, or if OCR fails, there is no
      text to check a quote against: they get a neutral score and a small penalty, which
      deliberately pushes them toward review.
 
@@ -113,7 +111,7 @@ They run offline.
 | Credit sign lost (`($3,200)` → `3200`) | Deterministic parser handles parens/CR; `credit_sign` rule | Credit implied only by prose |
 | Misread digit / transposition | Value-in-evidence cap; arithmetic rules; repair pass | A misread in a field no rule touches (e.g. project number) is caught only if the quote is exact |
 | Hallucinated value for a missing field | "null over guess" prompt; evidence must ground; null-vs-regex check | Plausible value with a plausible quote on a scan |
-| Scans / phone photos | Page is sent as an image to a vision model (photos EXIF-rotated and size-capped first); with Docling for IBM watsonx configured, the page is also OCR'd so quotes can be grounded and the regex cross-check can run | OCR misreads weaken grounding, so those fields drift toward review rather than passing silently. Without OCR, scans get a discounted neutral score. Scans are sent to IBM, which may not suit every customer |
+| Scans / phone photos | Photos are EXIF-rotated and size-capped, then a vision model reads the page image; confidence is discounted because there is no text layer to check quotes against | Scans lean on review. Hosted OCR (Docling) was tried and benchmarked; it made errors look verified (see *OCR or vision?*), so it is opt-in only |
 | Handwritten overrides / strike-throughs | Model sees the page image; prompt says latest edit wins; surfaced in `notes` | Ambiguous markups. These *should* go to a human |
 | Superseded numbers in email threads | Quoted chain stripped at ingest; prompt warning | Forwarded threads without `>` quoting |
 | Document's own math is wrong | Rules fire, re-read confirms, values kept as printed and flagged | — (correct behaviour is to flag) |
@@ -142,6 +140,26 @@ confidence per field, the document confidence, and a warning when the document i
 
 It calls the same `pipeline.run` as the CLI. It is a thin view, not a second code path. A **Demo**
 provider replays the recorded fixtures so it works without any API key.
+
+## OCR or vision?
+
+Scans and photos have no text layer, so two designs were compared on the same 10 ground-truth samples,
+rendered as scanned-looking images (`scripts/benchmark_ocr.py`, one model call per document, no repair):
+the free vision model reading the image, and Docling for IBM watsonx OCR followed by a free text model.
+
+| | Vision model reads the image | Docling OCR, then a text model |
+|---|---|---|
+| Field accuracy | **95.5%** (210/220) | 91.9% (182/198) |
+| Wrong but confident (at least 0.70) | **5** | 11 |
+| Documents completed | **10/10** | 9/10 |
+| Mean time per document | **38 s** | 64 s |
+
+The surprise was the confidence column. OCR misreads (a `$17,340` read as `$17,040`) were copied into
+the answer and then checked against the same misread text, so they looked *grounded*: OCR turns a
+reading error into a verified one. The vision model has no intermediate text to agree with, so its
+mistakes are less often confident. The text model was also unreliable on the free tier: its primary
+never answered, and the fallback ran out of output tokens on the multi-page document. Docling stays
+in the code as an opt-in.
 
 ## Swapping the model
 
@@ -196,10 +214,10 @@ Two things surfaced immediately that are worth recording:
   instead of hand-setting them. The weights are currently shared across providers, which the Gemini
   numbers show is wrong: a model whose self-report is flat needs `W_MODEL` near zero and the freed
   weight moved to grounding. Fitting per provider falls out of doing this properly.
-- **Measure hosted OCR on the eval set.** Docling for IBM watsonx is integrated for scans and
-  photos. Running Docling locally earlier raised the scanned sample from 0.76 to 0.87 document
-  confidence (every field checked instead of the same flat score) but cost about 90 s a page on CPU,
-  which is why it moved to the hosted service. The eval should be re-run with it on.
+- **OCR as a second opinion, not as the input.** The benchmark showed OCR text makes a bad *input*
+  (its misreads look verified). It could still be a useful independent check: let the vision model
+  read the image, then compare each value with Docling's text and lower confidence where they
+  disagree, the same way the regex cross-check works today.
 - **Split multi-CO packets** and run extraction on each.
 - **Per-customer layout hints** (few-shot from their past COs), with prompt caching for the static
   prefix.
