@@ -506,6 +506,47 @@ def test_not_a_change_order_caps_every_field_and_skips_repair():
     assert "not_a_change_order" in {i["code"] for i in r["issues"]}
 
 
+def test_wrong_not_a_change_order_verdict_is_overruled():
+    # Seen live: a free model read every field of a plain change order right, then said it isn't one.
+    ex = _Replay(raw(is_change_order=False))
+    r = pipeline.run(FIX / "docs" / "simple_co.txt", ex)
+    codes_ = {i["code"] for i in r["issues"]}
+    assert "change_order_verdict_overruled" in codes_ and "not_a_change_order" not in codes_
+    assert r["document_confidence"] > 0.7
+    assert r["fields"]["contractor"]["confidence"] > 0.9
+    assert ex.calls == 1
+
+
+def test_verdict_stands_for_an_invoice_that_mentions_a_change_order(tmp_path):
+    # The CO number appears, but not in the opening lines: this is an invoice billing for a CO.
+    invoice = tmp_path / "invoice.txt"
+    lines = ["BRIGHTWATER ELECTRIC SUPPLY", "INVOICE INV-58812", "Bill to: Northgate Builders",
+             *(f"Item {i}  1 EA  $100.00  $100.00" for i in range(8)),
+             "Billed under Change Order No. CO-007", "Total due: $3,850.00"]
+    invoice.write_text("\n".join(lines) + "\n")
+    r = pipeline.run(invoice, _Replay(raw(is_change_order=False)))
+    assert "not_a_change_order" in {i["code"] for i in r["issues"]}
+    assert r["document_confidence"] == 0
+
+
+def test_verdict_stands_when_the_math_fails():
+    r = pipeline.run(FIX / "docs" / "simple_co.txt",
+                     _Replay(raw(is_change_order=False, revised_contract_sum="1300000.00")))
+    assert "not_a_change_order" in {i["code"] for i in r["issues"]}
+    assert r["document_confidence"] == 0
+
+
+def test_verdict_is_overruled_on_the_aia_sample():
+    # The document from the live run: "CHANGE ORDER NUMBER: 003" sits in its opening lines.
+    doc = load(Path(__file__).parents[1] / "test_samples" / "1_original_samples" / "01_aia_clean.pdf")
+    from co_extract.validate import overrule_not_a_change_order
+    r = raw(is_change_order=False, change_order_number="003")
+    typed, issues = normalize_extraction(r)
+    r2, issues2 = overrule_not_a_change_order(r, typed, issues + check_rules(typed, r), doc.pages[0])
+    assert r2.is_change_order
+    assert "change_order_verdict_overruled" in {i.code for i in issues2}
+
+
 def test_change_order_fields_are_not_capped():
     r = pipeline.run(FIX / "docs" / "simple_co.txt", FixtureExtractor(FIX / "llm"))
     assert r["fields"]["contractor"]["confidence"] > 0.9

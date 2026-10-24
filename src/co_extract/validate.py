@@ -143,3 +143,34 @@ def check_rules(t: Typed, raw: RawExtraction, today: date | None = None) -> list
             issues.append(Issue(code="credit_sign", severity="soft", fields=["total_change_amount"],
                                 message="total is positive but the document describes a credit/deduct"))
     return issues
+
+
+HEADER_LINES = 8  # how far down page 1 a change order's title and number are looked for
+
+
+def overrule_not_a_change_order(raw: RawExtraction, t: Typed, issues: list[Issue],
+                                first_page: str) -> tuple[RawExtraction, list[Issue]]:
+    """Check the model's "not a change order" verdict against the document itself.
+
+    The verdict is one unchecked boolean, and when it is false every confidence drops to 0.
+    A free model has returned it for a plain AIA change order whose 22 fields it read
+    correctly. So it stands only unless the document contradicts it: the opening lines carry
+    a change-order number (``heuristics``) matching the extracted one, the amount was read,
+    and no arithmetic check failed. An invoice that merely mentions a change order further
+    down doesn't qualify, and a scan with no text keeps the model's verdict.
+    """
+    from . import heuristics
+
+    if raw.is_change_order:
+        return raw, issues
+    header = "\n".join([line for line in first_page.splitlines() if line.strip()][:HEADER_LINES])
+    titled = heuristics.agrees("change_order_number", t.values["change_order_number"], heuristics.extract(header))
+    money_ok = t.values["total_change_amount"] is not None and not any(i.code in ARITHMETIC_CODES for i in issues)
+    if not (titled and money_ok):
+        return raw, issues
+    kept = [i for i in issues if i.code != "not_a_change_order"]
+    kept.append(Issue(code="change_order_verdict_overruled", severity="soft",
+                      message="The model judged this is not a change order, but it is titled as one with "
+                              f"number {t.values['change_order_number']} and its amounts check out, "
+                              "so it was treated as a change order."))
+    return raw.model_copy(update={"is_change_order": True}), kept

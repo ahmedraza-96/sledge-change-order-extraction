@@ -79,6 +79,9 @@ are kept **as printed** and the issue message says so. Do not "fix" documents.
 
 **Not a change order.** When the model reports `is_change_order=false`, `pipeline.build_result` caps every
 field's confidence at the document's (0) and `_needs_repair` skips the re-read, which can't help and costs a call.
+That verdict is checked first: `validate.overrule_not_a_change_order` (called from `pipeline._validate`) flips it
+back to true, with a soft `change_order_verdict_overruled` issue, when page 1's opening `HEADER_LINES` carry a
+CO number (`heuristics`) agreeing with the extracted one, the amount was read and no arithmetic check failed.
 
 **Issue severity is load-bearing.** `hard` (unparseable value, missing CO number) triggers repair and caps document
 confidence at 0.5; `soft` only lowers field confidence. Each issue lists the `fields` it involves, and

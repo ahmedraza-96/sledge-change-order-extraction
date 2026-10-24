@@ -12,12 +12,15 @@ from .extract import Extractor, LLMResult
 from .ingest import Document, load
 from .normalize import to_json
 from .schema import FIELD_SPECS, Issue, RawExtraction
-from .validate import ARITHMETIC_CODES, Typed, check_rules, normalize_extraction
+from .validate import ARITHMETIC_CODES, Typed, check_rules, normalize_extraction, overrule_not_a_change_order
 
 
-def _validate(raw: RawExtraction) -> tuple[Typed, list[Issue]]:
+def _validate(raw: RawExtraction, doc: Document) -> tuple[RawExtraction, Typed, list[Issue]]:
     typed, issues = normalize_extraction(raw)
-    return typed, issues + check_rules(typed, raw)
+    issues += check_rules(typed, raw)
+    # The "not a change order" verdict zeroes every score, so the document gets a say too.
+    raw, issues = overrule_not_a_change_order(raw, typed, issues, doc.pages[0] if doc.pages else "")
+    return raw, typed, issues
 
 
 def _needs_repair(raw: RawExtraction, issues: list[Issue]) -> bool:
@@ -42,7 +45,7 @@ def run(path: str | Path, extractor: Extractor, allow_repair: bool = True,
     calls: list[LLMResult] = [extractor.extract(doc, progress=lambda **info: step("extract", **info))]
     raw = calls[0].extraction
     step("validate")
-    typed, issues = _validate(raw)
+    raw, typed, issues = _validate(raw, doc)
 
     repair = None
     if allow_repair and _needs_repair(raw, issues):
@@ -50,7 +53,7 @@ def run(path: str | Path, extractor: Extractor, allow_repair: bool = True,
         step("repair", checks=first_codes)
         calls.append(extractor.extract(doc, repair=(raw, issues), progress=lambda **info: step("repair", **info)))
         raw2 = calls[-1].extraction
-        typed2, issues2 = _validate(raw2)
+        raw2, typed2, issues2 = _validate(raw2, doc)
         n_hard = lambda xs: sum(i.severity == "hard" for i in xs)  # noqa: E731
         # Keep whichever attempt is better: fewer hard errors, then fewer issues overall.
         if (n_hard(issues2), len(issues2)) <= (n_hard(issues), len(issues)):

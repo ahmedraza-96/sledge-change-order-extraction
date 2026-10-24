@@ -360,6 +360,7 @@ function renderDocument() {
 const DOC_WARNINGS = {
   not_a_change_order: () => "This document is not a change order.",
   multiple_change_orders: (i) => i.message.replace(/\.$/, "") + ".",
+  change_order_verdict_overruled: (i) => i.message,
 };
 const docWarnings = (r) => r.issues.filter((i) => DOC_WARNINGS[i.code]).map((i) => ({ code: i.code, text: DOC_WARNINGS[i.code](i) }));
 function simplified(r) {

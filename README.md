@@ -142,7 +142,9 @@ rule involving the line items.
 **Document confidence** = 0.6 × the weakest *critical* field (CO number, CO amount, the three contract
 sums) + 0.4 × the average of all fields. It is capped at 0.5 if there is a hard error (e.g. no CO number)
 or several change orders in one file. It is 0 if the document isn't a change order at all, and then
-every field is capped at 0 too.
+every field is capped at 0 too. That verdict comes from the model, so it is checked: if the model says
+"not a change order" but the document's opening lines give a change-order number that matches the one
+extracted, and the amounts pass every check, the verdict is overruled and a warning says so.
 
 **Review:** any field below **0.70** is listed in `needs_review`.
 
