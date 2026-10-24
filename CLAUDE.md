@@ -96,6 +96,12 @@ exactly (`Document.kind == "image"`). Docling for IBM watsonx OCR is **opt-in**:
 more accurate (95.5% vs 91.9%). `OpenRouterExtractor` always uses `OPENROUTER_MODELS` (vision) and sends page images
 whenever the document has a PDF. `tests/conftest.py` clears those variables (and the switch) for every offline test, so the suite never calls IBM. Document confidence is driven by the weakest `CRITICAL_FIELDS`.
 
+**History (`history.py`).** `web._Job.run` records every web run, successes and failures, in SQLite
+(`HISTORY_DB`, default `data/history.db`; `off` disables it): the uploaded bytes, the full result and the
+model. Recording failures are logged, never raised. The History view in `static/index.html` reopens a run
+through the same render path as a live result. `tests/conftest.py` points `HISTORY_DB` at a per-test
+temp file. On EC2 the deploy mounts `/opt/co-extract/data` at `/app/data` so redeploys keep it.
+
 **`heuristics.py` is a cross-check, not a fallback.** A high-precision labelled-value regex extractor that abstains
 (`agrees()` returns `None`) rather than guessing. Keep it independent of the LLM path; its value is disagreeing.
 

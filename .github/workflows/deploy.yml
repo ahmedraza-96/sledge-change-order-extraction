@@ -3,7 +3,8 @@
 # No long-lived AWS keys: GitHub gets short-lived credentials through an IAM role (OIDC) that
 # trusts only this repository's main branch. The image goes to ECR, then SSM Run Command tells
 # the instance to pull it and restart the container. API keys live only on the instance, in
-# /opt/co-extract/.env. One-time AWS setup: see deploy/README.md.
+# /opt/co-extract/.env. The history database lives in /opt/co-extract/data, mounted into the
+# container, so it survives redeploys. One-time AWS setup: see deploy/README.md.
 #
 # Repository variables (Settings → Secrets and variables → Actions → Variables):
 #   AWS_REGION, AWS_ROLE_ARN, ECR_REPOSITORY, EC2_INSTANCE_ID, APP_PORT (all optional; defaults in the deploy job)
@@ -80,7 +81,8 @@ jobs:
             "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($reg)",
             "docker pull \($img)",
             "docker rm -f co-extract 2>/dev/null || true",
-            "docker run -d --name co-extract --restart unless-stopped -p \($port):8000 --env-file /opt/co-extract/.env \($img)",
+            "mkdir -p /opt/co-extract/data && chown 10001:10001 /opt/co-extract/data",
+            "docker run -d --name co-extract --restart unless-stopped -p \($port):8000 --env-file /opt/co-extract/.env -v /opt/co-extract/data:/app/data \($img)",
             "docker image prune -af --filter until=168h || true"
           ]')
           CMD_ID=$(aws ssm send-command \

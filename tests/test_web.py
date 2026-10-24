@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -114,3 +115,47 @@ def test_stream_reports_extraction_errors(client):
     r = client.post("/api/extract/stream", data={"provider": "demo", "text": "CHANGE ORDER No. 9"})
     events = [json.loads(line) for line in r.text.splitlines()]
     assert "Demo mode only has recorded output" in events[-1]["error"]
+
+
+# ---------- history ----------
+
+def test_extraction_is_recorded_in_history(client):
+    doc = (FIX / "docs" / "simple_co.txt").read_bytes()
+    body = client.post("/api/extract", data={"provider": "demo"},
+                       files={"file": ("simple_co.txt", doc, "text/plain")}).json()
+    run_id = body["history_id"]
+    [summary] = client.get("/api/history").json()
+    assert summary["id"] == run_id and summary["filename"] == "simple_co.txt"
+    assert summary["source"] == "file" and summary["status"] == "ok"
+    run = client.get(f"/api/history/{run_id}").json()
+    assert run["result"]["fields"]["total_change_amount"]["value"] == "3850.00"
+    stored = client.get(f"/api/history/{run_id}/document")
+    assert stored.status_code == 200 and stored.content == doc
+    assert stored.headers["content-type"].startswith("text/plain")
+    assert stored.headers["x-content-type-options"] == "nosniff"
+
+
+def test_streamed_extraction_is_recorded(client):
+    text = client.get("/api/samples/simple_co").text
+    r = client.post("/api/extract/stream", data={"provider": "demo", "text": text, "name": "simple_co"})
+    final = [json.loads(line) for line in r.text.splitlines() if line.strip()][-1]
+    run = client.get(f"/api/history/{final['result']['history_id']}").json()
+    assert run["source"] == "text" and run["status"] == "ok"
+
+
+def test_failed_extraction_is_recorded(client):
+    r = client.post("/api/extract", data={"provider": "demo", "text": "CHANGE ORDER No. 9"})
+    assert r.status_code == 502
+    [summary] = client.get("/api/history").json()
+    assert summary["status"] == "error"
+    assert "Demo mode only has recorded output" in summary["error"]
+    assert client.get(f"/api/history/{summary['id']}/document").content == b"CHANGE ORDER No. 9"
+
+
+def test_unknown_run_is_404(client):
+    assert client.get("/api/history/999").status_code == 404
+    assert client.get("/api/history/999/document").status_code == 404
+
+
+def test_samples_are_gone_from_the_page(client):
+    assert 'id="samples"' not in client.get("/").text

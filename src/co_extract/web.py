@@ -7,12 +7,13 @@ import queue
 import re
 import tempfile
 import threading
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 
-from . import pipeline
+from . import history, pipeline
 from .cli import SUFFIXES
 from .extract import ExtractionError, FixtureExtractor
 from .providers import DEFAULT_MODELS, Provider, has_key, make_extractor
@@ -55,13 +56,58 @@ def sample(name: str) -> str:
     return SAMPLES[name].read_text(encoding="utf-8")
 
 
+@app.get("/api/history")
+def history_list(limit: int = Query(50, ge=1, le=200), before: int | None = None) -> list[dict]:
+    """Past runs, newest first. Public by design: anyone who can open the app can see them."""
+    return history.list_runs(limit=limit, before=before)
+
+
+@app.get("/api/history/{run_id}")
+def history_run(run_id: int) -> dict:
+    run = history.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, f"no run {run_id}")
+    return run
+
+
+# Uploads are limited to these suffixes (cli.SUFFIXES), none of which a browser runs as a page.
+MEDIA_TYPES = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".eml": "text/plain; charset=utf-8",
+               ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+               ".bmp": "image/bmp", ".tif": "image/tiff", ".tiff": "image/tiff"}
+
+
+@app.get("/api/history/{run_id}/document")
+def history_document(run_id: int) -> Response:
+    found = history.get_document(run_id)
+    if found is None:
+        raise HTTPException(404, f"no stored document for run {run_id}")
+    filename, data = found
+    media = MEDIA_TYPES.get(Path(filename).suffix.lower(), "application/octet-stream")
+    safe = re.sub(r'[^\w.-]', "_", filename)
+    return Response(data, media_type=media, headers={"X-Content-Type-Options": "nosniff",
+                                                      "Content-Disposition": f'inline; filename="{safe}"'})
+
+
 class _Job:
     """A validated request: what to read and which extractor reads it."""
 
-    def __init__(self, filename: str, data: bytes, extractor, provider: str):
+    def __init__(self, filename: str, data: bytes, extractor, provider: str, source: str = "file"):
         self.filename, self.data, self.extractor, self.provider = filename, data, extractor, provider
+        self.source = source  # "file" or "text", for the history
 
     def run(self, on_step=None) -> dict:
+        started = time.monotonic()
+        try:
+            result = self._run(on_step)
+        except Exception as e:
+            # Failed runs go in the history too: what the client tried matters as much as what worked.
+            msg = str(e) if isinstance(e, ExtractionError) else f"Unexpected error: {e}"
+            self._record(error=msg, started=started)
+            raise
+        result["history_id"] = self._record(result=result, started=started)
+        return result
+
+    def _run(self, on_step) -> dict:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / self.filename
             path.write_bytes(self.data)
@@ -75,6 +121,11 @@ class _Job:
         result["source"] = self.filename  # not the temp path
         return result
 
+    def _record(self, started: float, result: dict | None = None, error: str | None = None) -> int | None:
+        return history.record(filename=self.filename, source=self.source, document=self.data,
+                              provider=self.provider, result=result, error=error,
+                              duration_ms=round((time.monotonic() - started) * 1000))
+
 
 def _job(provider: str | None, model: str | None, text: str | None, name: str | None,
          file: UploadFile | None) -> _Job:
@@ -82,10 +133,12 @@ def _job(provider: str | None, model: str | None, text: str | None, name: str | 
     if file is not None and file.filename:
         filename = Path(file.filename).name
         data = file.file.read()
+        source = "file"
     elif text and text.strip():
         # Keep a sample's name so demo mode can find its recording.
         filename = (re.sub(r"[^\w-]", "", name or "") or "pasted") + ".txt"
         data = text.encode()
+        source = "text"
     else:
         raise HTTPException(400, "Upload a file or paste the change order text.")
     if Path(filename).suffix.lower() not in SUFFIXES:
@@ -97,14 +150,14 @@ def _job(provider: str | None, model: str | None, text: str | None, name: str | 
         if provider is None:
             raise HTTPException(400, "No model is configured. Add OPENROUTER_API_KEY to the .env file and restart.")
     if provider == DEMO:
-        return _Job(filename, data, FixtureExtractor(FIXTURES / "llm"), provider)
+        return _Job(filename, data, FixtureExtractor(FIXTURES / "llm"), provider, source)
     try:
         p = Provider(provider)
     except ValueError:
         raise HTTPException(400, f"Unknown provider {provider!r}.") from None
     if not has_key(p):
         raise HTTPException(400, f"No API key for {LABELS[p]} — set it in .env.")
-    return _Job(filename, data, make_extractor(p, model=(model or "").strip() or None), provider)
+    return _Job(filename, data, make_extractor(p, model=(model or "").strip() or None), provider, source)
 
 
 @app.post("/api/extract")

@@ -16,6 +16,10 @@ API keys live only on the instance, in `/opt/co-extract/.env`. They're never in 
 - Instance `kestrel-recon` (`i-0c8315ea4cff28197`, ap-south-1). It also runs the kestrel-recon app on port 8501.
 - ECR repository `co-extract`, deploy role `co-extract-github-deploy`.
 - The app is at `http://52.66.247.74:8000` (that public IP changes if the instance is stopped and started).
+- The run history (SQLite) is in `/opt/co-extract/data/history.db` on the instance. The deploy mounts that
+  folder into the container, so redeploys keep it. To copy it to your machine for review:
+  `scp <user>@<instance-ip>:/opt/co-extract/data/history.db .` (or use `sqlite3` on the instance). To clear it,
+  delete the file and restart the container (`docker restart co-extract`).
 
 These values are defaults in `deploy.yml`. Set the repository variables only to deploy somewhere else.
 

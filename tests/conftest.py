@@ -12,3 +12,9 @@ def no_hosted_ocr(request, monkeypatch):
     monkeypatch.delenv("DOCLING_SERVICE_URL", raising=False)
     monkeypatch.delenv("DOCLING_SERVICE_API_KEY", raising=False)
     monkeypatch.delenv("DOCLING_OCR_ENABLED", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def history_in_tmp(tmp_path, monkeypatch):
+    """Every test gets its own history database, so the suite never writes to data/history.db."""
+    monkeypatch.setenv("HISTORY_DB", str(tmp_path / "history.db"))

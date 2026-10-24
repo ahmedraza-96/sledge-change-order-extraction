@@ -79,7 +79,15 @@ with a live count of fields as the model writes them (OpenRouter streams). The r
 document on the left and, on the right, the extracted JSON: each field's value and confidence
 (colour-coded, red below 0.70), the document confidence, and a warning if the document isn't a change
 order. Copy and Download give exactly that JSON; the CLI gives the full output with evidence, reasons
-and validation issues. The "Try a sample" links replay recorded results, so they never spend quota.
+and validation issues.
+
+**History.** Every extraction, including failed ones, is saved to SQLite (`co_extract/history.py`): the
+document exactly as uploaded or pasted, the full result, the model, the time taken and any error. The
+**History** button lists the runs newest first; opening one shows the document beside its JSON, exactly
+as it was first shown. The database is `data/history.db` (`HISTORY_DB` changes the path; `HISTORY_DB=off`
+turns recording off). Files over 20 MB keep their result but not the file. The history is visible to
+anyone who can open the app and has no delete button, so don't upload confidential documents to a public
+deployment. To clear it, delete the database file on the server.
 
 **Optional: Docling for IBM watsonx OCR (off by default).** With `DOCLING_OCR_ENABLED=true` plus
 `DOCLING_SERVICE_URL` and `DOCLING_SERVICE_API_KEY`, every document is rendered as page images and OCR'd
@@ -177,6 +185,7 @@ src/co_extract/
   heuristics.py  independent regex extractor used as a cross-check
   confidence.py  per-field and document confidence
   pipeline.py    ingest -> extract -> validate -> repair once -> score
+  history.py     SQLite record of every web run (document + result), behind the History view
   evaluate.py    accuracy, calibration (ECE), review precision / recall
   cli.py         `co-extract extract | eval | serve`, `--provider claude|gemini|openai`
   web.py, static/index.html  FastAPI web UI over pipeline.run

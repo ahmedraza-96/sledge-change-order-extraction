@@ -72,7 +72,36 @@
     background: var(--wash); padding: 12px; font: 13px/1.5 var(--mono);
   }
   textarea:focus { background: var(--paper); }
-  .samples { display: flex; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--muted); margin-top: 6px; }
+  header.top .btn { margin-left: auto; align-self: center; }
+
+  /* ---------- history: every run anyone has made, newest first ---------- */
+  .history { padding-block: 0 24px; }
+  .history-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .history-head h2 { margin: 0; font-size: 17px; }
+  .history-head .hint { flex: 1; }
+  .runs { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .runs li + li { border-top: 1px solid var(--rule); }
+  .runs button { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; padding: 10px 14px;
+    display: grid; grid-template-columns: 150px minmax(0, 1fr) minmax(0, 260px) 64px; gap: 14px; align-items: center; }
+  .runs button:hover, .runs button:focus-visible { background: var(--wash); }
+  .runs button.current { background: var(--blue-wash); }
+  .runs .when { color: var(--muted); font-size: 14px; }
+  .runs .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .runs .what small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .runs .model { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runs .score { justify-self: end; font-weight: 600; border-radius: 6px; padding: 1px 8px; font-size: 14px; }
+  .runs .score.good { color: var(--good); background: var(--good-wash); }
+  .runs .score.warn { color: var(--warn); background: var(--warn-wash); }
+  .runs .score.bad, .runs .score.failed { color: var(--bad); background: var(--bad-wash); }
+  .runs .empty { padding: 18px 14px; color: var(--muted); }
+  @media (max-width: 760px) {
+    .runs button { grid-template-columns: minmax(0, 1fr) auto; }
+    .runs .when { grid-column: 1 / -1; }
+    .runs .model { display: none; }
+  }
+  .more-row { display: flex; justify-content: center; margin-top: 10px; }
+  .from-history { grid-column: 1 / -1; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
+  .from-history b { color: var(--ink); font-weight: 600; }
   .go-row { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
   .btn { border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 500; }
   .btn:hover { border-color: #c5ccd5; background: var(--wash); }
@@ -177,6 +206,7 @@
   <div class="wrap">
     <h1>Change order review</h1>
     <p>Upload a change order to get its fields as JSON, each with a confidence score, and see where each one came from.</p>
+    <button class="btn" id="historyBtn" type="button" aria-expanded="false" aria-controls="history">History</button>
   </div>
 </header>
 
@@ -208,7 +238,6 @@
       <div>
         <label class="label" for="text">Or paste the text</label>
         <textarea id="text" placeholder="CHANGE ORDER No. …"></textarea>
-        <div class="samples" id="samples"></div>
       </div>
     </div>
     <div class="go-row">
@@ -218,7 +247,18 @@
     <div id="error" class="error" role="alert" hidden></div>
   </section>
 
+  <section id="history" class="wrap history" hidden aria-labelledby="history-title">
+    <div class="history-head">
+      <h2 id="history-title">History</h2>
+      <span class="hint">Every extraction run on this site, newest first. Open one to see the document and its result.</span>
+      <button class="btn" id="historyClose" type="button">Close</button>
+    </div>
+    <ul class="runs" id="runs"></ul>
+    <div class="more-row"><button class="btn" id="historyMore" type="button" hidden>Load older runs</button></div>
+  </section>
+
   <section id="workspace" class="wrap workspace" hidden aria-label="Results">
+    <div id="fromHistory" class="from-history" hidden></div>
     <div id="banner" class="banner" role="alert" hidden></div>
     <div class="panel">
       <div class="panel-bar">
@@ -253,7 +293,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&l
 
 const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp"];
 const BROWSER_IMAGES = ["png", "jpg", "jpeg", "webp", "bmp"];   // TIFF doesn't display in most browsers
-const state = { file: null, url: null, kind: null, ext: "", text: "", sample: null, result: null };
+const state = { file: null, url: null, kind: null, ext: "", text: "", result: null };
 
 const tone = (c) => c >= 0.85 ? "good" : c >= THRESHOLD ? "warn" : "bad";
 const sizeOf = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
@@ -265,7 +305,7 @@ function kindOf(name) {
 }
 async function setFile(f) {
   if (state.url) URL.revokeObjectURL(state.url);
-  state.file = f; state.url = null; state.text = ""; state.sample = null;
+  state.file = f; state.url = null; state.text = "";
   if (!f) { $("fileCard").hidden = true; $("drop").hidden = false; return; }
   Object.assign(state, kindOf(f.name));
   state.url = URL.createObjectURL(f);
@@ -286,7 +326,7 @@ $("file").onchange = (e) => setFile(e.target.files[0] || null);
 ["dragenter", "dragover"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
 ["dragleave", "drop"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
 $("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
-$("text").oninput = () => { state.sample = null; if ($("text").value && state.file) { setFile(null); $("file").value = ""; } };
+$("text").oninput = () => { if ($("text").value && state.file) { setFile(null); $("file").value = ""; } };
 
 // ---------- the original document ----------
 function originalHTML() {
@@ -387,16 +427,80 @@ $("dlJson").onclick = () => {
   a.click();
 };
 
-// ---------- samples ----------
-async function loadSamples() {
-  const names = await (await fetch("/api/samples")).json();
-  if (!names.length) return;
-  $("samples").innerHTML = "<span>Try a sample (recorded result, no model call):</span>" + names.map((n) => `<button class="link" type="button" data-s="${esc(n)}">${esc(n.replace(/_/g, " "))}</button>`).join("");
-  $("samples").querySelectorAll("button").forEach((b) => b.onclick = async () => {
-    await setFile(null); $("file").value = "";
-    $("text").value = await (await fetch("/api/samples/" + encodeURIComponent(b.dataset.s))).text();
-    state.sample = b.dataset.s;
-  });
+// ---------- history ----------
+// Every run is saved on the server (document and result), so any past run reopens exactly as it was shown.
+const runs = { list: [], open: false, current: null };
+const when = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+function runRow(r) {
+  const name = r.source === "text" ? "Pasted text" : r.filename;
+  const sub = r.status === "error" ? r.error : r.is_change_order === false ? "Not a change order"
+    : r.review_count ? `${r.review_count} field${r.review_count === 1 ? "" : "s"} to review` : "No fields to review";
+  const score = r.status === "error" ? '<span class="score failed">Failed</span>'
+    : `<span class="score ${tone(r.document_confidence)}">${r.document_confidence.toFixed(2)}</span>`;
+  return `<li><button type="button" data-id="${r.id}" class="${r.id === runs.current ? "current" : ""}">
+    <span class="when">${esc(when(r.created_at))}</span>
+    <span class="what">${esc(name)}<small>${esc(sub || "")}</small></span>
+    <span class="model">${esc(r.model || r.provider || "")}</span>${score}</button></li>`;
+}
+function renderRuns() {
+  $("runs").innerHTML = runs.list.length ? runs.list.map(runRow).join("")
+    : '<li class="empty">No runs yet. Extract a document and it will appear here.</li>';
+  $("runs").querySelectorAll("button[data-id]").forEach((b) => b.onclick = () => openRun(+b.dataset.id));
+}
+const PAGE = 50;
+async function loadRuns(more = false) {
+  const before = more && runs.list.length ? `&before=${runs.list[runs.list.length - 1].id}` : "";
+  const resp = await fetch(`/api/history?limit=${PAGE}${before}`);
+  if (!resp.ok) return showError("Couldn't load the history.");
+  const page = await resp.json();
+  runs.list = more ? runs.list.concat(page) : page;
+  $("historyMore").hidden = page.length < PAGE;
+  renderRuns();
+}
+function toggleHistory(open) {
+  runs.open = open;
+  $("history").hidden = !open;
+  $("historyBtn").setAttribute("aria-expanded", String(open));
+  if (open) { loadRuns(); $("history").scrollIntoView({ behavior: "smooth" }); }
+}
+$("historyBtn").onclick = () => toggleHistory(!runs.open);
+$("historyClose").onclick = () => toggleHistory(false);
+$("historyMore").onclick = () => loadRuns(true);
+
+async function openRun(id) {
+  $("error").hidden = true;
+  const resp = await fetch(`/api/history/${id}`);
+  if (!resp.ok) return showError("Couldn't open that run.");
+  const run = await resp.json();
+  // Put the stored document through the same path as an upload, so it shows exactly as it did.
+  let file = null;
+  if (run.has_document) {
+    const doc = await fetch(`/api/history/${id}/document`);
+    if (doc.ok) file = new File([await doc.blob()], run.filename);
+  }
+  $("file").value = "";
+  if (file && run.source === "file") await setFile(file);
+  else { await setFile(null); state.kind = "text"; state.text = file ? await file.text() : ""; $("text").value = ""; }
+  runs.current = id; renderRuns();
+  const from = $("fromHistory");
+  from.hidden = false;
+  from.innerHTML = `<b>From history</b><span>${esc(when(run.created_at))}</span>`
+    + (run.model ? `<span>${esc(run.model)}</span>` : "")
+    + (run.duration_ms != null ? `<span>${(run.duration_ms / 1000).toFixed(1)} s</span>` : "")
+    + (run.has_document ? "" : "<span>The document itself wasn't stored (over 20 MB).</span>");
+  $("workspace").hidden = false;
+  if (run.status === "error") {
+    state.result = null;
+    $("banner").hidden = false; $("banner").className = "banner bad";
+    $("banner").innerHTML = `<b>This run failed.</b><span>${esc(run.error || "")}</span>`;
+    renderDocument();
+    $("jsonBody").innerHTML = '<p class="note" style="margin:16px">No result: the extraction failed.</p>';
+  } else {
+    state.result = run.result;
+    renderBanner(); renderDocument(); renderJSON();
+  }
+  $("copyJson").disabled = $("dlJson").disabled = !state.result;
+  $("workspace").scrollIntoView({ behavior: "smooth" });
 }
 
 // ---------- progress timeline ----------
@@ -497,8 +601,6 @@ $("go").onclick = async () => {
   else {
     if (!$("text").value.trim()) return showError("Upload a file or paste the change order text first.");
     fd.append("text", $("text").value);
-    // A sample replays its recorded result, so trying the app never spends API quota.
-    if (state.sample) { fd.append("name", state.sample); fd.append("provider", "demo"); }
     state.kind = "text"; state.text = $("text").value;
   }
   $("error").hidden = true;
@@ -512,6 +614,9 @@ $("go").onclick = async () => {
     const body = await extractWithProgress(fd);
     $("timeline").hidden = true;
     state.result = body;
+    runs.current = body.history_id ?? null;
+    $("fromHistory").hidden = true;
+    $("copyJson").disabled = $("dlJson").disabled = false;
     $("workspace").hidden = false;
     renderBanner(); renderDocument(); renderJSON();
     $("workspace").scrollIntoView({ behavior: "smooth" });
@@ -520,6 +625,7 @@ $("go").onclick = async () => {
     showError("Extraction failed: " + err.message);
   } finally {
     btn.disabled = false; btn.textContent = "Extract";
+    if (runs.open) loadRuns();   // the run just made (or failed) is now in the history
   }
 };
 function renderBanner() {
@@ -541,7 +647,6 @@ function renderBanner() {
 }
 function showError(msg) { $("error").textContent = msg; $("error").hidden = false; }
 
-loadSamples();
 </script>
 </body>
 </html>

@@ -13,11 +13,12 @@ COPY pyproject.toml README.md ./
 COPY src/co_extract/__init__.py src/co_extract/__init__.py
 RUN pip install -e .
 
-# The app, plus the recorded fixtures the "Try a sample" / Demo mode replays.
+# The app, plus the recorded fixtures the Demo provider replays.
 COPY src ./src
 COPY tests/fixtures ./tests/fixtures
 
-RUN useradd --create-home --uid 10001 app && chown -R app /app
+# data/ holds the history database; deploy.yml mounts a host folder here so it outlives the container.
+RUN mkdir -p /app/data && useradd --create-home --uid 10001 app && chown -R app /app
 USER app
 
 EXPOSE 8000
