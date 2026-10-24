@@ -416,8 +416,22 @@ function renderJSON() {
   $("jsonBody").innerHTML = `<div class="json">${html}</div>`;
 }
 const jsonText = () => JSON.stringify(simplified(state.result), null, 2);
+// The Clipboard API only exists on HTTPS or localhost; a plain-HTTP deployment (like the EC2 one)
+// has no navigator.clipboard, so fall back to copying a selected, off-screen textarea.
+function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard) return navigator.clipboard.writeText(text);
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error("copy refused"));
+}
 $("copyJson").onclick = async () => {
-  try { await navigator.clipboard.writeText(jsonText()); $("copyJson").textContent = "Copied"; }
+  try { await copyText(jsonText()); $("copyJson").textContent = "Copied"; }
   catch { $("copyJson").textContent = "Copy failed"; }
   setTimeout(() => $("copyJson").textContent = "Copy", 1500);
 };
