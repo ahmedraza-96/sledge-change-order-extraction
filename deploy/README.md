@@ -11,6 +11,14 @@ Every push to `main` runs `.github/workflows/deploy.yml`:
 
 API keys live only on the instance, in `/opt/co-extract/.env`. They're never in the image or in GitHub.
 
+## Current deployment
+
+- Instance `kestrel-recon` (`i-0c8315ea4cff28197`, ap-south-1). It also runs the kestrel-recon app on port 8501.
+- ECR repository `co-extract`, deploy role `co-extract-github-deploy`.
+- The app is at `http://52.66.247.74:8000` (that public IP changes if the instance is stopped and started).
+
+These values are defaults in `deploy.yml`. Set the repository variables only to deploy somewhere else.
+
 ## One-time setup
 
 **1. AWS resources.** You need a working `aws` login, then:
