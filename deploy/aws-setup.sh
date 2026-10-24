@@ -42,11 +42,15 @@ aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_ARN" 
 echo "OIDC provider: $OIDC_ARN"
 
 # --- Role GitHub Actions assumes: only this repo's main branch ---
+# GitHub may send the subject as owner/repo or with immutable IDs (owner@id/repo@id); accept both.
+IDS=$(curl -fsS "https://api.github.com/repos/$REPO" | python3 -c 'import json,sys; r=json.load(sys.stdin); print(r["owner"]["id"], r["id"])')
+read -r OWNER_ID REPO_ID <<<"$IDS"
+SUB_ID_FORM="repo:${REPO%%/*}@${OWNER_ID}/${REPO#*/}@${REPO_ID}:ref:refs/heads/main"
 TRUST=$(cat <<EOF
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"$OIDC_ARN"},
  "Action":"sts:AssumeRoleWithWebIdentity","Condition":{
   "StringEquals":{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com",
-                  "token.actions.githubusercontent.com:sub":"repo:$REPO:ref:refs/heads/main"}}}]}
+                  "token.actions.githubusercontent.com:sub":["repo:$REPO:ref:refs/heads/main","$SUB_ID_FORM"]}}}]}
 EOF
 )
 if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
