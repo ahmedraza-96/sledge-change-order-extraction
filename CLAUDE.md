@@ -103,7 +103,8 @@ whenever the document has a PDF. `tests/conftest.py` clears those variables (and
 (`HISTORY_DB`, default `data/history.db`; `off` disables it): the uploaded bytes, the full result and the
 model. Recording failures are logged, never raised. The History view in `static/index.html` reopens a run
 through the same render path as a live result. `tests/conftest.py` points `HISTORY_DB` at a per-test
-temp file. On EC2 the deploy mounts `/opt/co-extract/data` at `/app/data` so redeploys keep it.
+temp file. `DELETE /api/history/{id}` needs the `X-Admin-Key` header to match `HISTORY_ADMIN_KEY` (unset → nobody
+can delete); the page shows Delete buttons only when opened as `/#admin`. On EC2 the deploy mounts `/opt/co-extract/data` at `/app/data` so redeploys keep it.
 
 **`heuristics.py` is a cross-check, not a fallback.** A high-precision labelled-value regex extractor that abstains
 (`agrees()` returns `None`) rather than guessing. Keep it independent of the LLM path; its value is disagreeing.

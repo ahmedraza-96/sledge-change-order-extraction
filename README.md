@@ -86,8 +86,11 @@ document exactly as uploaded or pasted, the full result, the model, the time tak
 **History** button lists the runs newest first; opening one shows the document beside its JSON, exactly
 as it was first shown. The database is `data/history.db` (`HISTORY_DB` changes the path; `HISTORY_DB=off`
 turns recording off). Files over 20 MB keep their result but not the file. The history is visible to
-anyone who can open the app and has no delete button, so don't upload confidential documents to a public
-deployment. To clear it, delete the database file on the server.
+anyone who can open the app, so don't upload confidential documents to a public deployment.
+
+Deleting is hidden and needs a key: set `HISTORY_ADMIN_KEY` in `.env`, open the app as
+`http://<host>:8000/#admin`, type the key into the **Admin key** box in History, and each run gets a
+**Delete** button (click it twice to confirm). Without the key set, the delete endpoint refuses everyone.
 
 **Optional: Docling for IBM watsonx OCR (off by default).** With `DOCLING_OCR_ENABLED=true` plus
 `DOCLING_SERVICE_URL` and `DOCLING_SERVICE_API_KEY`, every document is rendered as page images and OCR'd

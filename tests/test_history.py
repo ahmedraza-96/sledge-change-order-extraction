@@ -72,3 +72,10 @@ def test_broken_path_does_not_raise(tmp_path, monkeypatch):
 def test_missing_run():
     assert history.get_run(999) is None
     assert history.get_document(999) is None
+
+
+def test_delete_run():
+    run_id = history.record(filename="a.txt", source="text", document=b"x", provider="demo", result=RESULT)
+    assert history.delete_run(run_id) is True
+    assert history.get_run(run_id) is None and history.get_document(run_id) is None
+    assert history.delete_run(run_id) is False

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
+import secrets
 import tempfile
 import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 
 from . import history, pipeline
@@ -68,6 +71,19 @@ def history_run(run_id: int) -> dict:
     if run is None:
         raise HTTPException(404, f"no run {run_id}")
     return run
+
+
+@app.delete("/api/history/{run_id}")
+def history_delete(run_id: int, x_admin_key: str | None = Header(None)) -> dict:
+    """Delete a run. Needs HISTORY_ADMIN_KEY: the list is public, deleting from it isn't.
+    With no key configured, nobody can delete."""
+    load_dotenv()
+    expected = os.environ.get("HISTORY_ADMIN_KEY", "").strip()
+    if not expected or not secrets.compare_digest((x_admin_key or "").encode(), expected.encode()):
+        raise HTTPException(403, "Wrong or missing admin key.")
+    if not history.delete_run(run_id):
+        raise HTTPException(404, f"no run {run_id}")
+    return {"deleted": run_id}
 
 
 # Uploads are limited to these suffixes (cli.SUFFIXES), none of which a browser runs as a page.

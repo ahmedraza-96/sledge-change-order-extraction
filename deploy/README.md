@@ -20,6 +20,9 @@ API keys live only on the instance, in `/opt/co-extract/.env`. They're never in 
   folder into the container, so redeploys keep it. To copy it to your machine for review:
   `scp <user>@<instance-ip>:/opt/co-extract/data/history.db .` (or use `sqlite3` on the instance). To clear it,
   delete the file and restart the container (`docker restart co-extract`).
+- To delete single runs from the browser, set the key once as a repository secret
+  (`gh secret set HISTORY_ADMIN_KEY`, which prompts for it). Each deploy writes it into
+  `/opt/co-extract/.env`. Then open `http://<ip>:8000/#admin` and enter it in History's **Admin key** box.
 
 These values are defaults in `deploy.yml`. Set the repository variables only to deploy somewhere else.
 

@@ -80,11 +80,17 @@
   .history-head h2 { margin: 0; font-size: 17px; }
   .history-head .hint { flex: 1; }
   .runs { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .runs li { display: flex; align-items: center; }
   .runs li + li { border-top: 1px solid var(--rule); }
-  .runs button { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; padding: 10px 14px;
+  .runs button.row { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; padding: 10px 14px;
     display: grid; grid-template-columns: 150px minmax(0, 1fr) minmax(0, 260px) 64px; gap: 14px; align-items: center; }
-  .runs button:hover, .runs button:focus-visible { background: var(--wash); }
-  .runs button.current { background: var(--blue-wash); }
+  .runs button.row { flex: 1; min-width: 0; }
+  .runs button.row:hover, .runs button.row:focus-visible { background: var(--wash); }
+  .runs button.row.current { background: var(--blue-wash); }
+  .runs .del { margin: 0 12px 0 0; color: var(--bad); border-color: var(--bad-wash); font-size: 13px; padding: 4px 10px; flex: none; }
+  .runs .del.confirm { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .admin-key { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+  .admin-key input { border: 1px solid var(--rule); border-radius: 8px; padding: 5px 9px; width: 180px; }
   .runs .when { color: var(--muted); font-size: 14px; }
   .runs .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .runs .what small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
@@ -95,7 +101,7 @@
   .runs .score.bad, .runs .score.failed { color: var(--bad); background: var(--bad-wash); }
   .runs .empty { padding: 18px 14px; color: var(--muted); }
   @media (max-width: 760px) {
-    .runs button { grid-template-columns: minmax(0, 1fr) auto; }
+    .runs button.row { grid-template-columns: minmax(0, 1fr) auto; }
     .runs .when { grid-column: 1 / -1; }
     .runs .model { display: none; }
   }
@@ -251,6 +257,7 @@
     <div class="history-head">
       <h2 id="history-title">History</h2>
       <span class="hint">Every extraction run on this site, newest first. Open one to see the document and its result.</span>
+      <label class="admin-key" id="adminKeyRow" hidden>Admin key <input id="adminKey" type="password" autocomplete="off"></label>
       <button class="btn" id="historyClose" type="button">Close</button>
     </div>
     <ul class="runs" id="runs"></ul>
@@ -452,15 +459,18 @@ function runRow(r) {
     : r.review_count ? `${r.review_count} field${r.review_count === 1 ? "" : "s"} to review` : "No fields to review";
   const score = r.status === "error" ? '<span class="score failed">Failed</span>'
     : `<span class="score ${tone(r.document_confidence)}">${r.document_confidence.toFixed(2)}</span>`;
-  return `<li><button type="button" data-id="${r.id}" class="${r.id === runs.current ? "current" : ""}">
+  return `<li><button type="button" data-id="${r.id}" class="row${r.id === runs.current ? " current" : ""}">
     <span class="when">${esc(when(r.created_at))}</span>
     <span class="what">${esc(name)}<small>${esc(sub || "")}</small></span>
-    <span class="model">${esc(r.model || r.provider || "")}</span>${score}</button></li>`;
+    <span class="model">${esc(r.model || r.provider || "")}</span>${score}</button>`
+    + (ADMIN ? `<button type="button" class="btn del" data-del="${r.id}" aria-label="Delete this run">Delete</button>` : "")
+    + "</li>";
 }
 function renderRuns() {
   $("runs").innerHTML = runs.list.length ? runs.list.map(runRow).join("")
     : '<li class="empty">No runs yet. Extract a document and it will appear here.</li>';
   $("runs").querySelectorAll("button[data-id]").forEach((b) => b.onclick = () => openRun(+b.dataset.id));
+  $("runs").querySelectorAll("button[data-del]").forEach((b) => b.onclick = () => deleteRun(b));
 }
 const PAGE = 50;
 async function loadRuns(more = false) {
@@ -482,6 +492,35 @@ $("historyBtn").onclick = () => toggleHistory(!runs.open);
 $("historyClose").onclick = () => toggleHistory(false);
 $("historyMore").onclick = () => loadRuns(true);
 
+// Admin mode: open the page as /#admin to get Delete buttons. Deleting also needs the server's
+// HISTORY_ADMIN_KEY, so finding the buttons isn't enough on its own.
+const ADMIN = location.hash === "#admin";
+const KEY_STORE = "co-extract-admin-key";
+if (ADMIN) {
+  $("adminKeyRow").hidden = false;
+  try { $("adminKey").value = sessionStorage.getItem(KEY_STORE) || ""; } catch {}
+  $("adminKey").oninput = () => { try { sessionStorage.setItem(KEY_STORE, $("adminKey").value); } catch {} };
+  window.addEventListener("load", () => toggleHistory(true));
+}
+async function deleteRun(btn) {
+  // Two clicks, no browser dialog: the first arms the button, the second deletes.
+  if (!btn.classList.contains("confirm")) {
+    btn.classList.add("confirm"); btn.textContent = "Confirm";
+    setTimeout(() => { btn.classList.remove("confirm"); btn.textContent = "Delete"; }, 4000);
+    return;
+  }
+  const id = +btn.dataset.del;
+  const resp = await fetch(`/api/history/${id}`, { method: "DELETE", headers: { "X-Admin-Key": $("adminKey").value } });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    return showError("Couldn't delete: " + (body.detail || resp.statusText));
+  }
+  $("error").hidden = true;
+  runs.list = runs.list.filter((r) => r.id !== id);
+  if (runs.current === id) { runs.current = null; $("workspace").hidden = true; }
+  renderRuns();
+}
+
 async function openRun(id) {
   $("error").hidden = true;
   const resp = await fetch(`/api/history/${id}`);
@@ -491,7 +530,7 @@ async function openRun(id) {
   let file = null;
   if (run.has_document) {
     const doc = await fetch(`/api/history/${id}/document`);
-    if (doc.ok) file = new File([await doc.blob()], run.filename);
+    if (doc.ok) { const blob = await doc.blob(); file = new File([blob], run.filename, { type: blob.type }); }
   }
   $("file").value = "";
   if (file && run.source === "file") await setFile(file);

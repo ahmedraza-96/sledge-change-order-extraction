@@ -159,3 +159,41 @@ def test_unknown_run_is_404(client):
 
 def test_samples_are_gone_from_the_page(client):
     assert 'id="samples"' not in client.get("/").text
+
+
+def _one_run(client) -> int:
+    text = client.get("/api/samples/simple_co").text
+    return client.post("/api/extract", data={"provider": "demo", "text": text, "name": "simple_co"}).json()["history_id"]
+
+
+def test_delete_needs_the_admin_key(client, monkeypatch):
+    monkeypatch.setenv("HISTORY_ADMIN_KEY", "s3cret")
+    run_id = _one_run(client)
+    assert client.delete(f"/api/history/{run_id}").status_code == 403
+    assert client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": "wrong"}).status_code == 403
+    assert client.get(f"/api/history/{run_id}").status_code == 200
+    r = client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": "s3cret"})
+    assert r.status_code == 200 and r.json() == {"deleted": run_id}
+    assert client.get(f"/api/history/{run_id}").status_code == 404
+    assert client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": "s3cret"}).status_code == 404
+
+
+def test_delete_is_off_without_a_configured_key(client, monkeypatch):
+    monkeypatch.setattr(web, "load_dotenv", lambda: None)  # ignore a developer's real .env
+    monkeypatch.delenv("HISTORY_ADMIN_KEY", raising=False)
+    run_id = _one_run(client)
+    assert client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": ""}).status_code == 403
+    assert client.get(f"/api/history/{run_id}").status_code == 200
+
+
+def test_pdf_from_history_is_served_as_a_pdf(client):
+    pdf = (Path(__file__).parents[1] / "test_samples" / "1_original_samples" / "01_aia_clean.pdf").read_bytes()
+    run_id = history_record_pdf(pdf)
+    r = client.get(f"/api/history/{run_id}/document")
+    assert r.headers["content-type"] == "application/pdf" and r.content == pdf
+
+
+def history_record_pdf(pdf: bytes) -> int:
+    from co_extract import history
+    return history.record(filename="01_aia_clean.pdf", source="file", document=pdf, provider="demo",
+                          result={"document_confidence": 1.0, "needs_review": [], "issues": [], "meta": {}})

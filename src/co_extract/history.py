@@ -127,6 +127,15 @@ def get_document(run_id: int) -> tuple[str, bytes] | None:
     return row["filename"], bytes(row["document"])
 
 
+def delete_run(run_id: int) -> bool:
+    """Remove a run and its stored document; False if there was no such run."""
+    path = db_path()
+    if path is None or not path.exists():
+        return False
+    with closing(_connect(path)) as conn, conn:
+        return conn.execute("DELETE FROM runs WHERE id = ?", (run_id,)).rowcount > 0
+
+
 def _summary(row: sqlite3.Row) -> dict:
     out = {k: row[k] for k in row.keys() if k != "result"}
     out["has_document"] = bool(out["has_document"])

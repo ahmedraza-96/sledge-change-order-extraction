@@ -72,12 +72,20 @@ jobs:
           echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
       - name: Deploy on EC2 through SSM
+        env:
+          # Optional repository secret: when set, it's written into the instance's .env so the
+          # History's hidden delete (/#admin) works. Unset leaves the .env's own value alone.
+          HISTORY_ADMIN_KEY: ${{ secrets.HISTORY_ADMIN_KEY }}
         run: |
           set -euo pipefail
           # Pull the new image and swap the container. The instance's own role reads from ECR.
-          COMMANDS=$(jq -cn --arg reg "$REGISTRY" --arg img "$IMAGE" --arg region "${{ env.AWS_REGION }}" --arg port "$APP_PORT" '[
+          COMMANDS=$(jq -cn --arg reg "$REGISTRY" --arg img "$IMAGE" --arg region "${{ env.AWS_REGION }}" --arg port "$APP_PORT" --arg key "$HISTORY_ADMIN_KEY" '[
             "set -e",
-            "test -f /opt/co-extract/.env || { echo \"missing /opt/co-extract/.env (see deploy/README.md)\"; exit 1; }",
+            "test -f /opt/co-extract/.env || { echo \"missing /opt/co-extract/.env (see deploy/README.md)\"; exit 1; }"
+          ] + (if $key == "" then [] else [
+            "sed -i \"/^HISTORY_ADMIN_KEY=/d\" /opt/co-extract/.env",
+            "echo \(("HISTORY_ADMIN_KEY=" + $key) | @sh) >> /opt/co-extract/.env"
+          ] end) + [
             "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($reg)",
             "docker pull \($img)",
             "docker rm -f co-extract 2>/dev/null || true",
