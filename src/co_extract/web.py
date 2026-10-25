@@ -20,6 +20,7 @@ from . import history, pipeline
 from .cli import SUFFIXES
 from .extract import ExtractionError, FixtureExtractor
 from .providers import DEFAULT_MODELS, Provider, has_key, make_extractor
+from .verify import FixtureVerifier, VerifyError, make_verifier
 
 STATIC = Path(__file__).parent / "static"
 # Demo mode replays the recorded LLM output the tests use, so it needs no key —
@@ -27,9 +28,12 @@ STATIC = Path(__file__).parent / "static"
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 SAMPLES = {p.stem: p for p in sorted((FIXTURES / "docs").glob("*.txt"))}
 DEMO = "demo"
-AUTO_ORDER = (Provider.openrouter, Provider.gemini, Provider.claude, Provider.openai)
+# GPT-6 Luna is the default; free OpenRouter (Nemotron) is the fallback when there's no OpenAI key.
+AUTO_ORDER = (Provider.luna, Provider.openrouter, Provider.gemini, Provider.claude, Provider.openai)
+# The page's model menu offers just these, default first.
+MENU = (Provider.luna, Provider.openrouter)
 LABELS = {Provider.claude: "Claude", Provider.gemini: "Gemini", Provider.openai: "OpenAI",
-          Provider.openrouter: "OpenRouter (free models)"}
+          Provider.openrouter: "OpenRouter (free models)", Provider.luna: "GPT-6 Luna (OpenAI)"}
 
 app = FastAPI(title="co-extract")
 
@@ -41,10 +45,10 @@ def index() -> FileResponse:
 
 @app.get("/api/providers")
 def providers() -> list[dict]:
-    out = [{"id": p.value, "label": LABELS[p], "default_model": DEFAULT_MODELS[p], "available": has_key(p)}
-           for p in Provider]
+    out = [{"id": p.value, "label": LABELS[p], "default_model": DEFAULT_MODELS[p], "available": has_key(p),
+            "in_menu": p in MENU} for p in sorted(Provider, key=lambda p: MENU.index(p) if p in MENU else len(MENU))]
     return out + [{"id": DEMO, "label": "Demo (recorded output, no API call)", "default_model": "fixture",
-                   "available": bool(SAMPLES)}]
+                   "available": bool(SAMPLES), "in_menu": False}]
 
 
 @app.get("/api/samples")
@@ -107,9 +111,10 @@ def history_document(run_id: int) -> Response:
 class _Job:
     """A validated request: what to read and which extractor reads it."""
 
-    def __init__(self, filename: str, data: bytes, extractor, provider: str, source: str = "file"):
+    def __init__(self, filename: str, data: bytes, extractor, provider: str, source: str = "file", verifier=None):
         self.filename, self.data, self.extractor, self.provider = filename, data, extractor, provider
         self.source = source  # "file" or "text", for the history
+        self.verifier = verifier
 
     def run(self, on_step=None) -> dict:
         started = time.monotonic()
@@ -128,7 +133,7 @@ class _Job:
             path = Path(tmp) / self.filename
             path.write_bytes(self.data)
             try:
-                result = pipeline.run(path, self.extractor, on_step=on_step)
+                result = pipeline.run(path, self.extractor, on_step=on_step, verifier=self.verifier)
             except ExtractionError as e:
                 if self.provider == DEMO:
                     raise ExtractionError(f"Demo mode only has recorded output for the sample documents "
@@ -141,6 +146,15 @@ class _Job:
         return history.record(filename=self.filename, source=self.source, document=self.data,
                               provider=self.provider, result=result, error=error,
                               duration_ms=round((time.monotonic() - started) * 1000))
+
+
+def _verifier():
+    """``VERIFIER=decisions`` in .env checks every run with the OpenAI Decisions API; off by default."""
+    load_dotenv()
+    try:
+        return make_verifier(os.environ.get("VERIFIER"))
+    except VerifyError as e:
+        raise HTTPException(400, f"Verifier: {e}") from e
 
 
 def _job(provider: str | None, model: str | None, text: str | None, name: str | None,
@@ -164,16 +178,19 @@ def _job(provider: str | None, model: str | None, text: str | None, name: str | 
         # The UI doesn't ask: use the first provider that has a key, free OpenRouter first.
         provider = next((p.value for p in AUTO_ORDER if has_key(p)), None)
         if provider is None:
-            raise HTTPException(400, "No model is configured. Add OPENROUTER_API_KEY to the .env file and restart.")
+            raise HTTPException(400, "No model is configured. Add OPENAI_API_KEY (GPT-6 Luna) or OPENROUTER_API_KEY "
+                                     "(free Nemotron) to the .env file and restart.")
     if provider == DEMO:
-        return _Job(filename, data, FixtureExtractor(FIXTURES / "llm"), provider, source)
+        return _Job(filename, data, FixtureExtractor(FIXTURES / "llm"), provider, source,
+                    FixtureVerifier(FIXTURES / "verify"))
     try:
         p = Provider(provider)
     except ValueError:
         raise HTTPException(400, f"Unknown provider {provider!r}.") from None
     if not has_key(p):
         raise HTTPException(400, f"No API key for {LABELS[p]} — set it in .env.")
-    return _Job(filename, data, make_extractor(p, model=(model or "").strip() or None), provider, source)
+    return _Job(filename, data, make_extractor(p, model=(model or "").strip() or None), provider, source,
+                _verifier())
 
 
 @app.post("/api/extract")

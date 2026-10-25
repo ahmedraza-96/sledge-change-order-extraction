@@ -289,6 +289,35 @@ def test_openai_extractor_sends_pdf_for_scanned(tmp_path):
     assert "no text layer" in parts[-1]["text"]
 
 
+def test_luna_sends_page_images_not_a_pdf(tmp_path, monkeypatch):
+    from co_extract.providers import Provider, make_extractor
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    pdf = _blank_pdf(tmp_path)
+    ex = make_extractor(Provider.luna)
+    captured: list = []
+    ex.client = _mock_openai_client(captured, GOOD)
+    r = ex.extract(load(pdf))
+    body = captured[0]
+    assert body["model"] == "gpt-6-luna"
+    assert body["reasoning"] == {"effort": "low"}
+    parts = body["input"][0]["content"]
+    assert parts[0]["type"] == "input_image" and parts[0]["image_url"].startswith("data:image/png;base64,")
+    assert all(p["type"] != "input_file" for p in parts)
+    assert r.provider == "luna"
+
+
+def test_luna_sends_the_same_prompt_text_as_gpt5_mini():
+    doc = load(FIX / "docs" / "simple_co.txt")
+    oai, luna = [], []
+    OpenAIExtractor(client=_mock_openai_client(oai, GOOD)).extract(doc)
+    OpenAIExtractor(client=_mock_openai_client(luna, GOOD), model="gpt-6-luna", send_images=True,
+                    reasoning_effort="low", provider="luna").extract(doc)
+    assert luna[0]["instructions"] == oai[0]["instructions"]
+    assert luna[0]["input"] == oai[0]["input"]  # a text document: no images, identical input
+    assert "reasoning" not in oai[0]
+
+
 def test_openai_extractor_out_of_credit():
     err = {"message": "You have no credits remaining.", "type": "insufficient_quota", "code": "credit_balance_exhausted"}
     ex = OpenAIExtractor(client=_mock_openai_client([], None, status=429, error=err))

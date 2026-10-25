@@ -7,12 +7,22 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import docling_ocr, heuristics
-from .confidence import REVIEW_THRESHOLD, document_confidence, field_confidence, line_items_confidence
+from .confidence import (
+    REVIEW_THRESHOLD,
+    VERIFIER_DOUBT,
+    W_VERIFIER,
+    blend_verifier,
+    document_confidence,
+    document_score,
+    field_confidence,
+    line_items_confidence,
+)
 from .extract import Extractor, LLMResult
 from .ingest import Document, load
 from .normalize import to_json
 from .schema import FIELD_SPECS, Issue, RawExtraction
 from .validate import ARITHMETIC_CODES, Typed, check_rules, normalize_extraction, overrule_not_a_change_order
+from .verify import Verifier, VerifyError
 
 
 def _validate(raw: RawExtraction, doc: Document) -> tuple[RawExtraction, Typed, list[Issue]]:
@@ -34,9 +44,9 @@ def _needs_repair(raw: RawExtraction, issues: list[Issue]) -> bool:
 
 
 def run(path: str | Path, extractor: Extractor, allow_repair: bool = True,
-        on_step: Callable[..., None] | None = None) -> dict:
+        on_step: Callable[..., None] | None = None, verifier: Verifier | None = None) -> dict:
     """``on_step(name, **info)`` is called as each stage starts (read, extract, validate,
-    repair, score), so a caller such as the web UI can show progress."""
+    repair, score, verify), so a caller such as the web UI can show progress."""
     step = on_step or (lambda name, **info: None)
     t0 = time.perf_counter()
     step("read")
@@ -64,7 +74,64 @@ def run(path: str | Path, extractor: Extractor, allow_repair: bool = True,
                 i.message += " (persisted after re-read: likely an error in the source document)"
 
     step("score")
-    return build_result(doc, raw, typed, issues, calls, repair, time.perf_counter() - t0)
+    result = build_result(doc, raw, typed, issues, calls, repair, time.perf_counter() - t0)
+    if verifier is not None:
+        step("verify")
+        attach_verification(result, doc, verifier)
+        result["meta"]["seconds"] = round(time.perf_counter() - t0, 2)
+    return result
+
+
+def attach_verification(result: dict, doc: Document, verifier: Verifier) -> dict:
+    """Ask the verifier about every field, store its probability and fold it into the confidence.
+
+    Works on a cached result too. A verifier failure never fails the run: it is noted in
+    ``meta.verify`` and the scores stay as they were. Skipped for a document that isn't a
+    change order, whose scores are already 0.
+    """
+    if any(i["code"] == "not_a_change_order" for i in result["issues"]):
+        return result
+    try:
+        v = verifier.verify(doc, result["change_order"])
+    except VerifyError as e:
+        result["meta"]["verify"] = {"error": str(e)}
+        return result
+    for name, f in result["fields"].items():
+        if name == "line_items":
+            rows = [v.probabilities.get(f"line_item_{i}") for i in range(len(f["value"]))]
+            rows = [p for p in rows if p is not None]
+            f["verifier_probability"] = min(rows) if rows else None
+        else:
+            f["verifier_probability"] = v.probabilities.get(name)
+    result["meta"]["verify"] = {"model": v.model, "input_tokens": v.input_tokens}
+    return apply_verifier(result)
+
+
+def apply_verifier(result: dict) -> dict:
+    """Blend each field's stored ``verifier_probability`` into its confidence, then redo the
+    document score and the review list.
+
+    Always blends from ``base_confidence`` (the score before the verifier), so applying it twice,
+    or re-scoring a cached run after ``W_VERIFIER`` changes, gives the same answer.
+    """
+    if any(i["code"] == "not_a_change_order" for i in result["issues"]):
+        return result
+    for f in result["fields"].values():
+        if f.get("verifier_probability") is None:
+            continue
+        p = f["verifier_probability"]
+        f.setdefault("base_confidence", f["confidence"])
+        f["confidence"] = blend_verifier(f["base_confidence"], p)
+        f["reasons"] = [r for r in f["reasons"] if not r.startswith("second-model check")]
+        if p < VERIFIER_DOUBT:
+            f["reasons"].append(f"second-model check doubts this value ({p:.2f})")
+    scores = {k: f["confidence"] for k, f in result["fields"].items()}
+    codes = {i["code"] for i in result["issues"]}
+    hard = any(i["severity"] == "hard" for i in result["issues"])
+    result["document_confidence"] = document_score(scores, hard, "multiple_change_orders" in codes)
+    result["needs_review"] = sorted(k for k, s in scores.items() if s < REVIEW_THRESHOLD)
+    result["meta"].setdefault("verify", {})["weight"] = W_VERIFIER
+    return result
 
 
 def build_result(doc: Document, raw: RawExtraction, typed: Typed, issues: list[Issue], calls: list[LLMResult],

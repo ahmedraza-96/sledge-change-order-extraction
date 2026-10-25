@@ -84,8 +84,12 @@ def document_prompt(doc: Document) -> str:
     if doc.ocr_pages:
         note += (f"The text of pages {doc.ocr_pages} was read by OCR and may contain recognition errors "
                  "(for example a misread digit). If an image of the page is attached, prefer it where they disagree.\n")
-    return (f"{note}<document source=\"{Path(doc.source).name}\">\n{doc.tagged_text()}\n</document>\n\n"
-            "Extract the change order.")
+    return f"{note}{fence_document(doc)}\n\nExtract the change order."
+
+
+def fence_document(doc: Document) -> str:
+    """The document text, fenced so it reads as data rather than instructions."""
+    return f"<document source=\"{Path(doc.source).name}\">\n{doc.tagged_text()}\n</document>"
 
 
 def repair_prompt(prev: RawExtraction, issues: list[Issue]) -> str:

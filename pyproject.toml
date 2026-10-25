@@ -9,6 +9,7 @@ dependencies = [
     "docling-client>=2.142.1",
     "fastapi>=0.161.1",
     "google-genai>=2.32.0",
+    "httpx>=0.28.1",
     "openai>=3.37.0",
     "pdfplumber>=0.11.10",
     "pillow>=13.0.0",

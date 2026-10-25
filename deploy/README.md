@@ -23,6 +23,11 @@ API keys live only on the instance, in `/opt/co-extract/.env`. They're never in 
 - To delete single runs from the browser, set the key once as a repository secret
   (`gh secret set HISTORY_ADMIN_KEY`, which prompts for it). Each deploy writes it into
   `/opt/co-extract/.env`. Then open `http://<ip>:8000/#admin` and enter it in History's **Admin key** box.
+- GPT-6 Luna (the default model) and the second-model check need the OpenAI key on the instance. Set it
+  once as a repository secret, `gh secret set OPENAI_API_KEY` (it prompts, so the key never lands in your
+  shell history), and turn the check on with `gh variable set VERIFIER --body decisions`. Each deploy
+  writes both into `/opt/co-extract/.env`. The site has no login, so anyone with the link spends that
+  key: set a monthly budget at platform.openai.com (Settings > Limits).
 
 These values are defaults in `deploy.yml`. Set the repository variables only to deploy somewhere else.
 

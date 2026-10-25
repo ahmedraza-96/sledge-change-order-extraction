@@ -26,7 +26,9 @@ from .ingest import Document
 from .schema import FIELD_SPECS, ExtractedField, FieldKind, Issue, RawExtraction
 from .validate import Typed
 
-REVIEW_THRESHOLD = 0.7
+# Picked by scripts/find_threshold.py (highest F2, checked leaving one document out) on 20 labelled
+# GPT-6 Luna runs; see reports/threshold-test.md. Re-run it when the scoring or the model changes.
+REVIEW_THRESHOLD = 0.65
 
 W_GROUNDING, W_MODEL, W_CHECKS = 0.5, 0.2, 0.3
 SCANNED_GROUNDING = 0.7  # neutral grounding when there is no text layer to check against
@@ -36,6 +38,13 @@ UNSUPPORTED_CAP = 0.3  # value not found in its own evidence quote: likely hallu
 ISSUE_PENALTY = 0.6  # per failed validation rule involving the field
 DISAGREE_PENALTY = 0.5
 AGREE_BONUS = 0.1
+# Share of the final score given to the second-model check (verify.py), when it answered:
+# final = (1 - W_VERIFIER) * the score above + W_VERIFIER * its probability. At 0.35 a confident
+# "no" takes a field to at most 0.65, which is in review unless every other signal was perfect
+# (exactly 1.0, then it sits on REVIEW_THRESHOLD); a value that failed a hard check (capped at 0.3)
+# stays in review even when the verifier says yes (0.545).
+W_VERIFIER = 0.35
+VERIFIER_DOUBT = 0.5
 
 _WS = re.compile(r"\s+")
 _NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -160,15 +169,23 @@ def line_items_confidence(raw: RawExtraction, typed: Typed, doc: Document, issue
     return round(score, 3), reasons
 
 
-def document_confidence(field_scores: dict[str, float], raw: RawExtraction, hard_issues: bool) -> float:
-    from .schema import CRITICAL_FIELDS
+def blend_verifier(score: float, probability: float) -> float:
+    return round((1 - W_VERIFIER) * score + W_VERIFIER * probability, 3)
 
+
+def document_confidence(field_scores: dict[str, float], raw: RawExtraction, hard_issues: bool) -> float:
     if not raw.is_change_order:
         return 0.0
+    return document_score(field_scores, hard_issues, raw.change_order_count > 1)
+
+
+def document_score(field_scores: dict[str, float], hard_issues: bool, multiple_change_orders: bool) -> float:
+    from .schema import CRITICAL_FIELDS
+
     critical = [field_scores[f] for f in CRITICAL_FIELDS if f in field_scores]
     score = 0.6 * min(critical) + 0.4 * (sum(field_scores.values()) / len(field_scores))
     if hard_issues:
         score = min(score, 0.5)
-    if raw.change_order_count > 1:
+    if multiple_change_orders:
         score = min(score, 0.5)
     return round(score, 3)

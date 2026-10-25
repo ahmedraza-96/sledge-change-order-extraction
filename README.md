@@ -9,7 +9,7 @@ See **[WRITEUP.md](WRITEUP.md)** for the approach, how confidence is computed, a
 
 ```bash
 uv sync
-cp .env.example .env            # add OPENROUTER_API_KEY (free); other providers and Docling are optional
+cp .env.example .env            # add OPENAI_API_KEY (GPT-6 Luna) and/or OPENROUTER_API_KEY (free); the rest is optional
 uv run python scripts/gen_dataset.py                      # generates data/samples + data/truth (not committed)
 uv run co-extract extract data/samples/03_credit.pdf      # JSON to stdout
 uv run co-extract extract data/samples -o out/            # a whole folder
@@ -24,6 +24,13 @@ uv run pytest -m live                                     # real API calls, per 
 Extraction runs against Claude (default), Gemini, OpenAI or OpenRouter's free models; everything after the model call —
 normalization, validation, the repair pass, confidence scoring — is shared, so the two are directly
 comparable on the same eval. OpenAI defaults to `gpt-5-mini` (`--provider openai`).
+
+**GPT-6 Luna (the web app's default).** `--provider luna` uses `gpt-6-luna` through `OPENAI_API_KEY`.
+It reads images but not PDFs, so PDFs, scans and photos go to it as page images, with reasoning set to
+"low". On the samples it was the most accurate and fastest option (~16 s, ~$0.002 per document).
+
+**Second-model check (optional).** With `--verify decisions` (web: `VERIFIER=decisions`), each field is
+also put to OpenAI's Decisions API as a yes/no claim, and its answer is 35% of the field's confidence.
 
 **OpenRouter (free).** `--provider openrouter` uses free models only. A vision model reads every
 document, `nvidia/nemotron-3.5-super-vl:free` with `dots-studio/dots-3-note-preview:free` as the
@@ -73,11 +80,11 @@ uv run co-extract serve          # then open http://127.0.0.1:8000
 ```
 
 Upload a PDF, an image (PNG/JPG/TIFF/WebP, e.g. a phone photo), .txt or .eml, or paste the text, and
-click **Extract**. The model is chosen automatically: OpenRouter when `OPENROUTER_API_KEY` is set,
-otherwise the next provider with a key. While it runs, a timeline shows each real step of the pipeline,
+click **Extract**. The **Model** menu offers GPT-6 Luna (the default, needs `OPENAI_API_KEY`) and the free
+OpenRouter Nemotron model (`OPENROUTER_API_KEY`); with neither key, the first provider that has one is used. While it runs, a timeline shows each real step of the pipeline,
 with a live count of fields as the model writes them (OpenRouter streams). The result shows the original
 document on the left and, on the right, the extracted JSON: each field's value and confidence
-(colour-coded, red below 0.70), the document confidence, and a warning if the document isn't a change
+(colour-coded, red below 0.65), the document confidence, and a warning if the document isn't a change
 order. Copy and Download give exactly that JSON; the CLI gives the full output with evidence, reasons
 and validation issues.
 
@@ -166,7 +173,7 @@ extracted, and the amounts pass every check, the verdict is overruled and a warn
     ...
   },
   "document_confidence": 0.95,
-  "needs_review": [],                      // fields with confidence < 0.7
+  "needs_review": [],                      // fields with confidence < 0.65
   "issues": [],                            // failed validation rules: {code, severity, message, fields}
   "notes": [],                             // ambiguities the model noticed (handwritten edits, etc.)
   "meta": { "model": "claude-opus-5-5", "llm_calls": 1, "repair": null, "input_tokens": ..., "output_tokens": ..., "seconds": ... }
@@ -192,7 +199,7 @@ src/co_extract/
   pipeline.py    ingest -> extract -> validate -> repair once -> score
   history.py     SQLite record of every web run (document + result), behind the History view
   evaluate.py    accuracy, calibration (ECE), review precision / recall
-  cli.py         `co-extract extract | eval | serve`, `--provider claude|gemini|openai`
+  cli.py         `co-extract extract | eval | serve`, `--provider claude|gemini|openai|openrouter|luna`, `--verify`
   web.py, static/index.html  FastAPI web UI over pipeline.run
 scripts/gen_dataset.py   synthetic dataset generator (seeded)
 data/samples, data/truth  10 change orders + ground truth

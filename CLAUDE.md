@@ -11,15 +11,16 @@ uv run pytest tests/test_units.py::test_parse_money     # single test
 uv run pytest -m live                      # 2 real API calls, needs ANTHROPIC_API_KEY in .env
 
 uv run python scripts/gen_dataset.py       # (re)generate data/samples + data/truth — required before `eval`
-uv run co-extract extract <file|dir> [-o out/] [--provider claude|gemini|openai] [--model ...]
+uv run co-extract extract <file|dir> [-o out/] [--provider claude|gemini|openai|openrouter] [--model ...]
 uv run co-extract eval --provider gemini   # -> reports/eval-gemini.md, caches runs in reports/runs/gemini/
 uv run co-extract eval --cached            # re-score cached runs without calling the API
+uv run co-extract eval --provider gemini --cached --verify decisions   # verify cached runs (OpenAI calls only)
 uv run co-extract serve                    # web UI (FastAPI) on http://127.0.0.1:8000
 ```
 
 `--provider` defaults to `claude` (`ANTHROPIC_API_KEY`); `gemini` needs `GEMINI_API_KEY` and defaults to
 `gemini-3.5-flash`; `openai` needs `OPENAI_API_KEY` and defaults to `gpt-5-mini`; `openrouter` needs
-`OPENROUTER_API_KEY` and uses free models only (`openrouter.py`: primary + `OPENROUTER_FALLBACKS`, all `:free` —
+`OPENROUTER_API_KEY` and uses free models only (`openrouter.py`: `OPENROUTER_MODELS`, primary first then fallback, all `:free` —
 OpenRouter bills a paid fallback at its own rate, so never add one). Gemini Pro models need billing enabled — on the free tier they report quota `limit: 0`.
 
 The free Gemini tier caps flash at ~5 requests/min **and ~20/day**, which is less than one full eval, so use
@@ -36,11 +37,17 @@ uv run co-extract extract tests/fixtures/docs/misread_co.txt --fixtures tests/fi
 `data/samples/`, `data/truth/` and `uv.lock` are gitignored build output — regenerate, don't commit.
 There is no linter or formatter configured.
 
+`test_samples/` holds hand-testing material for the web UI (originals, phone photos/scans, and unseen documents
+with expected answers in `test_samples/README.txt`); it is not read by the test suite or `eval`.
+
+**Every push to `main` deploys.** `.github/workflows/deploy.yml` runs the offline tests, builds the `Dockerfile`
+image into ECR and restarts the container on EC2 via SSM (one-time AWS setup: `deploy/README.md`).
+
 ## Architecture
 
 One pass per document: `ingest -> extract (Claude) -> normalize -> validate -> repair once? -> confidence -> JSON`,
 orchestrated by `pipeline.run`. The design goal is not just accuracy but *knowing which fields are wrong*,
-so every field carries a confidence score and fields below `REVIEW_THRESHOLD` (0.7) land in `needs_review`.
+so every field carries a confidence score and fields below `REVIEW_THRESHOLD` (0.65, picked by `scripts/find_threshold.py` on labelled runs; re-run it after changing scores) land in `needs_review`.
 `WRITEUP.md` is the rationale document — read it before changing confidence weights or validation rules.
 
 **Two schema layers (`schema.py`).** `RawExtraction` is the LLM contract and is deliberately **all strings** —
@@ -50,7 +57,7 @@ prompt field list (via `FIELD_GUIDE`), normalization, the output envelope and th
 means touching `FIELD_SPECS`, `FIELD_GUIDE` and the `RawExtraction` body — a module-level `assert` catches drift.
 `line_items` is handled separately everywhere (it is not in `FIELD_SPECS`).
 
-**Extraction is behind a Protocol.** `extract.Extractor` has four implementations: `ClaudeExtractor`
+**Extraction is behind a Protocol.** `extract.Extractor` has five implementations (GPT-6 Luna is not a sixth: `Provider.luna` is `OpenAIExtractor` with `send_images=True`, `reasoning_effort="low"`, `provider="luna"`, because Luna takes images but not PDFs; it is the web default, `web.AUTO_ORDER`/`web.MENU`): `ClaudeExtractor`
 (`client.beta.messages.parse` with `output_format=RawExtraction`), `GeminiExtractor` in `gemini.py`
 (`client.models.generate_content` with `response_schema=RawExtraction`), `OpenAIExtractor` in
 `openai_extractor.py` (`client.responses.parse` with `text_format=RawExtraction`, strict mode), `OpenRouterExtractor` in
@@ -105,6 +112,18 @@ model. Recording failures are logged, never raised. The History view in `static/
 through the same render path as a live result. `tests/conftest.py` points `HISTORY_DB` at a per-test
 temp file. `DELETE /api/history/{id}` needs the `X-Admin-Key` header to match `HISTORY_ADMIN_KEY` (unset → nobody
 can delete); the page shows Delete buttons only when opened as `/#admin`. On EC2 the deploy mounts `/opt/co-extract/data` at `/app/data` so redeploys keep it.
+
+**Verifier (`verify.py`), blended into confidence.** An optional second opinion per field: each value becomes a
+yes/no claim (`claim()`, with field names from `LABELS`, which must match `FIELD_SPECS`) and the OpenAI Decisions API
+(`POST /v1/decisions`, `gpt-6-luna`, one call per document, no PDFs, so scans send `openrouter.page_images`) returns a
+probability, stored as `fields[*].verifier_probability`. `pipeline.attach_verification` builds the claims from the
+result JSON, so `eval --cached --verify decisions` can verify cached runs without re-extracting.
+`pipeline.apply_verifier` then sets confidence = `(1 - W_VERIFIER)` × `base_confidence` + `W_VERIFIER` × probability
+(`confidence.W_VERIFIER` = 0.35) and redoes the document score and `needs_review`. It always blends from
+`base_confidence`, so it is idempotent, and `eval --cached` re-scores saved runs for free after the weight changes.
+A declined question (`None`) leaves the field alone. A `VerifyError` is recorded in `meta.verify`, leaves the
+scores as they were, and never fails a run. The web page shows only `confidence`, not the raw probability. Off by default (`--verify off`; web: `VERIFIER=decisions` in `.env`);
+`FixtureVerifier` replays `tests/fixtures/verify/<stem>.json` for tests and the web Demo.
 
 **`heuristics.py` is a cross-check, not a fallback.** A high-precision labelled-value regex extractor that abstains
 (`agrees()` returns `None`) rather than guessing. Keep it independent of the LLM path; its value is disagreeing.

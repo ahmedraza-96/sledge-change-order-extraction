@@ -8,12 +8,25 @@ import typer
 
 from . import evaluate, pipeline
 from .extract import ExtractionError
-from .ingest import IMAGE_SUFFIXES
+from .ingest import IMAGE_SUFFIXES, load
 from .providers import Provider, make_extractor
+from .verify import VerifyError, make_verifier
 
 app = typer.Typer(add_completion=False, help="Extract structured fields from construction change orders.")
 
 SUFFIXES = {".pdf", ".txt", ".eml", *IMAGE_SUFFIXES}
+
+VerifyOpt = Annotated[str, typer.Option("--verify", help="Check each field with a second model: off | decisions "
+                                                         "(OpenAI Decisions API, needs OPENAI_API_KEY)")]
+VerifyFixturesOpt = Annotated[Path | None, typer.Option(help="Replay recorded verifier answers")]
+
+
+def _verifier(name: str, fixtures: Path | None):
+    try:
+        return make_verifier(name, fixtures)
+    except VerifyError as e:
+        typer.echo(f"verifier: {e}", err=True)
+        raise typer.Exit(1) from e
 
 
 def _inputs(paths: list[Path]) -> list[Path]:
@@ -32,14 +45,17 @@ def extract(
     text_only: Annotated[bool, typer.Option("--text-only", help="Send extracted text only, not the PDF")] = False,
     provider: Annotated[Provider, typer.Option(help="Which model backend to call")] = Provider.claude,
     model: Annotated[str | None, typer.Option(help="Override the provider's default model")] = None,
+    verify: VerifyOpt = "off",
+    verify_fixtures: VerifyFixturesOpt = None,
 ):
     """Extract one or more change orders to JSON."""
     ex = make_extractor(provider, model, fixtures, text_only)
+    verifier = _verifier(verify, verify_fixtures)
     files = _inputs(paths)
     failed = 0
     for f in files:
         try:
-            result = pipeline.run(f, ex, allow_repair=not no_repair)
+            result = pipeline.run(f, ex, allow_repair=not no_repair, verifier=verifier)
         except ExtractionError as e:
             failed += 1
             typer.echo(f"{f}: extraction failed: {e}", err=True)
@@ -69,8 +85,13 @@ def eval_cmd(
     fixtures: Annotated[Path | None, typer.Option(help="Replay recorded LLM outputs")] = None,
     provider: Annotated[Provider, typer.Option(help="Which model backend to call")] = Provider.claude,
     model: Annotated[str | None, typer.Option(help="Override the provider's default model")] = None,
+    verify: VerifyOpt = "off",
+    verify_fixtures: VerifyFixturesOpt = None,
 ):
-    """Run the pipeline over the labelled samples and write a markdown report."""
+    """Run the pipeline over the labelled samples and write a markdown report.
+
+    With ``--verify``, cached runs that have no verifier answers yet are verified too and written
+    back, so existing extractions can be checked without calling the extractor again."""
     # Scoped per provider: a shared cache would let one provider's runs overwrite the
     # other's, and --cached would then silently score a mix of the two.
     runs = runs or Path("reports/runs") / provider.value
@@ -79,6 +100,7 @@ def eval_cmd(
     runs.mkdir(parents=True, exist_ok=True)
     results: dict[str, dict] = {}
     ex = None if cached else make_extractor(provider, model, fixtures)
+    verifier = _verifier(verify, verify_fixtures)
     for f in _inputs([samples]):
         if f.stem not in truths:
             continue
@@ -90,9 +112,17 @@ def eval_cmd(
             results[f.stem] = json.loads(cache.read_text())
             if resume:
                 typer.echo(f"{f.stem}: cached", err=True)
+            # Not yet verified, or the last attempt failed.
+            if verifier and "model" not in results[f.stem]["meta"].get("verify", {}):
+                pipeline.attach_verification(results[f.stem], load(f), verifier)
+                typer.echo(f"{f.stem}: verify {results[f.stem]['meta'].get('verify')}", err=True)
+            elif "model" in results[f.stem]["meta"].get("verify", {}):
+                # Re-score with the current W_VERIFIER, free: the probabilities are in the cache.
+                pipeline.apply_verifier(results[f.stem])
+            cache.write_text(json.dumps(results[f.stem], indent=2))
             continue
         try:
-            results[f.stem] = pipeline.run(f, ex)
+            results[f.stem] = pipeline.run(f, ex, verifier=verifier)
         except ExtractionError as e:
             typer.echo(f"{f.stem}: extraction failed: {e}", err=True)
             continue

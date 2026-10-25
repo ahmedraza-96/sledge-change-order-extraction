@@ -22,7 +22,7 @@ def test_index_served(client):
 
 def test_providers_list_includes_demo(client):
     ids = {p["id"]: p for p in client.get("/api/providers").json()}
-    assert set(ids) == {"claude", "gemini", "openai", "openrouter", "demo"}
+    assert set(ids) == {"claude", "gemini", "openai", "openrouter", "luna", "demo"}
     assert ids["demo"]["available"]
 
 
@@ -89,6 +89,17 @@ def test_provider_is_picked_automatically(client, monkeypatch):
     assert r.status_code == 200 and picked == [web.Provider.gemini]
 
 
+def test_luna_is_the_default_and_nemotron_the_menu_alternative(client, monkeypatch):
+    picked = []
+    monkeypatch.setattr(web, "has_key", lambda p: True)
+    monkeypatch.setattr(web, "make_extractor", lambda p, model=None: picked.append(p) or web.FixtureExtractor(FIX / "llm"))
+    doc = (FIX / "docs" / "simple_co.txt").read_bytes()
+    r = client.post("/api/extract", files={"file": ("simple_co.txt", doc, "text/plain")})
+    assert r.status_code == 200 and picked == [web.Provider.luna]
+    menu = [p["id"] for p in client.get("/api/providers").json() if p["in_menu"]]
+    assert menu == ["luna", "openrouter"]
+
+
 def test_no_configured_provider_explains_how_to_fix(client, monkeypatch):
     monkeypatch.setattr(web, "has_key", lambda p: False)
     r = client.post("/api/extract", data={"text": "CHANGE ORDER No. 9"})
@@ -104,7 +115,8 @@ def test_stream_reports_real_steps_then_the_result(client):
     events = [json.loads(line) for line in r.text.splitlines()]
     steps = [e["step"] for e in events if "step" in e]
     # misread_co fails its checks on the first read, so the repair step appears.
-    assert steps == ["read", "extract", "validate", "repair", "score"]
+    # Demo mode replays recorded verifier answers too.
+    assert steps == ["read", "extract", "validate", "repair", "score", "verify"]
     assert events[[e.get("step") for e in events].index("repair")]["checks"]
     assert "result" in events[-1] and events[-1]["result"]["fields"]["total_change_amount"]["value"]
 

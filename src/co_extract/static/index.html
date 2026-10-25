@@ -109,6 +109,9 @@
   .from-history { grid-column: 1 / -1; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
   .from-history b { color: var(--ink); font-weight: 600; }
   .go-row { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .model-pick { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted, #5b6573); }
+  .model-pick[hidden] { display: none; }
+  .model-pick select { border: 1px solid var(--rule); background: var(--paper); color: inherit; border-radius: 8px; padding: 8px 10px; font: inherit; max-width: 100%; }
   .btn { border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 500; }
   .btn:hover { border-color: #c5ccd5; background: var(--wash); }
   .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; padding: 11px 28px; font-size: 16px; }
@@ -247,6 +250,9 @@
       </div>
     </div>
     <div class="go-row">
+      <label class="model-pick">Model
+        <select id="provider"></select>
+      </label>
       <button id="go" class="btn primary" type="button">Extract</button>
     </div>
     <ol id="timeline" class="timeline" hidden aria-live="polite" aria-label="Progress"></ol>
@@ -294,7 +300,7 @@
 </dialog>
 
 <script>
-const THRESHOLD = 0.7;
+const THRESHOLD = 0.65;   // confidence.REVIEW_THRESHOLD
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
@@ -376,7 +382,10 @@ function simplified(r) {
   const warnings = docWarnings(r).map((w) => w.text);
   if (warnings.length) out.warnings = warnings;
   out.fields = {};
-  for (const [name, f] of Object.entries(r.fields)) out.fields[name] = { value: f.value, confidence: round(f.confidence) };
+  for (const [name, f] of Object.entries(r.fields)) {
+    // The second model's check is already part of the confidence (confidence.W_VERIFIER).
+    out.fields[name] = { value: f.value, confidence: round(f.confidence) };
+  }
   return out;
 }
 function jsonValue(v, indent) {
@@ -565,6 +574,7 @@ const STEPS = [
   { id: "validate", label: "Checking the math", note: "Line items, subtotal, total and the contract sum." },
   { id: "repair", label: "Re-reading to fix what didn't add up", optional: true },
   { id: "score", label: "Scoring confidence for each field" },
+  { id: "verify", label: "Double-checking each field with a second model", optional: true },
 ];
 const progress = { current: null, seen: new Set(), info: {}, bar: {}, failed: false };
 // The validator's check codes, in words (see validate.py).
@@ -649,8 +659,17 @@ async function extractWithProgress(fd) {
 }
 
 // ---------- extraction ----------
+// GPT-6 Luna first (the default), then the free OpenRouter model. If the list can't load, or no menu
+// model has a key, the menu stays empty and the server picks whichever provider is configured.
+fetch("/api/providers").then((r) => r.ok ? r.json() : []).then((list) => {
+  for (const p of list.filter((p) => p.in_menu && p.available)) {
+    $("provider").insertAdjacentHTML("beforeend", `<option value="${esc(p.id)}">${esc(p.label)} · ${esc(p.default_model)}</option>`);
+  }
+  $("provider").closest(".model-pick").hidden = !$("provider").options.length;
+}).catch(() => {});
 $("go").onclick = async () => {
   const fd = new FormData();
+  if ($("provider").value) fd.append("provider", $("provider").value);
   if (state.file) fd.append("file", state.file);
   else {
     if (!$("text").value.trim()) return showError("Upload a file or paste the change order text first.");

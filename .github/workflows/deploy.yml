@@ -73,19 +73,24 @@ jobs:
 
       - name: Deploy on EC2 through SSM
         env:
-          # Optional repository secret: when set, it's written into the instance's .env so the
-          # History's hidden delete (/#admin) works. Unset leaves the .env's own value alone.
+          # Optional settings copied into the instance's .env on every deploy; an unset one leaves the
+          # .env's own value alone. HISTORY_ADMIN_KEY enables the History's hidden delete (/#admin);
+          # OPENAI_API_KEY is GPT-6 Luna (the default model) and the verifier; VERIFIER=decisions
+          # (a repository variable) turns the second-model check on.
           HISTORY_ADMIN_KEY: ${{ secrets.HISTORY_ADMIN_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VERIFIER: ${{ vars.VERIFIER }}
         run: |
           set -euo pipefail
           # Pull the new image and swap the container. The instance's own role reads from ECR.
-          COMMANDS=$(jq -cn --arg reg "$REGISTRY" --arg img "$IMAGE" --arg region "${{ env.AWS_REGION }}" --arg port "$APP_PORT" --arg key "$HISTORY_ADMIN_KEY" '[
+          SETTINGS=$(jq -cn --arg a "$HISTORY_ADMIN_KEY" --arg o "$OPENAI_API_KEY" --arg v "$VERIFIER" '{HISTORY_ADMIN_KEY: $a, OPENAI_API_KEY: $o, VERIFIER: $v}')
+          COMMANDS=$(jq -cn --arg reg "$REGISTRY" --arg img "$IMAGE" --arg region "${{ env.AWS_REGION }}" --arg port "$APP_PORT" --argjson settings "$SETTINGS" '[
             "set -e",
             "test -f /opt/co-extract/.env || { echo \"missing /opt/co-extract/.env (see deploy/README.md)\"; exit 1; }"
-          ] + (if $key == "" then [] else [
-            "sed -i \"/^HISTORY_ADMIN_KEY=/d\" /opt/co-extract/.env",
-            "echo \(("HISTORY_ADMIN_KEY=" + $key) | @sh) >> /opt/co-extract/.env"
-          ] end) + [
+          ] + ([$settings | to_entries[] | select(.value != "") | (
+            "sed -i \"/^\(.key)=/d\" /opt/co-extract/.env",
+            "echo \((.key + "=" + .value) | @sh) >> /opt/co-extract/.env"
+          )]) + [
             "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($reg)",
             "docker pull \($img)",
             "docker rm -f co-extract 2>/dev/null || true",
