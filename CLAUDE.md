@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Command
 
 ```bash
 uv sync                                    # install (Python 3.12+, uv_build backend)
