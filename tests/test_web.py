@@ -190,11 +190,19 @@ def test_delete_needs_the_admin_key(client, monkeypatch):
     assert client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": "s3cret"}).status_code == 404
 
 
+@pytest.mark.parametrize("configured", ['"Raza212172@"', "'Raza212172@'", "  Raza212172@  "])
+def test_admin_key_ignores_quotes_and_spaces(client, monkeypatch, configured):
+    monkeypatch.setenv("HISTORY_ADMIN_KEY", configured)  # as a hand-edited .env might hold it
+    run_id = _one_run(client)
+    assert client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": "Raza212172@ "}).status_code == 200
+
+
 def test_delete_is_off_without_a_configured_key(client, monkeypatch):
     monkeypatch.setattr(web, "load_dotenv", lambda: None)  # ignore a developer's real .env
     monkeypatch.delenv("HISTORY_ADMIN_KEY", raising=False)
     run_id = _one_run(client)
-    assert client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": ""}).status_code == 403
+    r = client.delete(f"/api/history/{run_id}", headers={"X-Admin-Key": ""})
+    assert r.status_code == 403 and "turned off" in r.json()["detail"]
     assert client.get(f"/api/history/{run_id}").status_code == 200
 
 

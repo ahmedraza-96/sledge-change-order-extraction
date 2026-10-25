@@ -82,9 +82,12 @@ def history_delete(run_id: int, x_admin_key: str | None = Header(None)) -> dict:
     """Delete a run. Needs HISTORY_ADMIN_KEY: the list is public, deleting from it isn't.
     With no key configured, nobody can delete."""
     load_dotenv()
-    expected = os.environ.get("HISTORY_ADMIN_KEY", "").strip()
-    if not expected or not secrets.compare_digest((x_admin_key or "").encode(), expected.encode()):
-        raise HTTPException(403, "Wrong or missing admin key.")
+    # docker --env-file keeps quotes as part of the value (KEY="x" gives '"x"'), so drop them.
+    expected = os.environ.get("HISTORY_ADMIN_KEY", "").strip().strip("\"'").strip()
+    if not expected:
+        raise HTTPException(403, "Deleting is turned off: no admin key is set on the server (HISTORY_ADMIN_KEY).")
+    if not secrets.compare_digest((x_admin_key or "").strip().encode(), expected.encode()):
+        raise HTTPException(403, "Wrong admin key.")
     if not history.delete_run(run_id):
         raise HTTPException(404, f"no run {run_id}")
     return {"deleted": run_id}
