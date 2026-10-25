@@ -33,7 +33,7 @@ AUTO_ORDER = (Provider.luna, Provider.openrouter, Provider.gemini, Provider.clau
 # The page's model menu offers just these, default first.
 MENU = (Provider.luna, Provider.openrouter)
 LABELS = {Provider.claude: "Claude", Provider.gemini: "Gemini", Provider.openai: "OpenAI",
-          Provider.openrouter: "OpenRouter (free models)", Provider.luna: "GPT-6 Luna (OpenAI)"}
+          Provider.openrouter: "NVIDIA Nemotron", Provider.luna: "GPT-6 Luna"}  # shown by model name
 
 app = FastAPI(title="co-extract")
 

@@ -461,6 +461,9 @@ $("dlJson").onclick = () => {
 // ---------- history ----------
 // Every run is saved on the server (document and result), so any past run reopens exactly as it was shown.
 const runs = { list: [], open: false, current: null };
+// "nvidia/nemotron-3.5-super-vl:free" -> "NVIDIA Nemotron", filled from /api/providers; unknown ids show as they are.
+const MODEL_NAMES = {};
+const modelName = (m) => MODEL_NAMES[m] || m;
 const when = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 function runRow(r) {
   const name = r.source === "text" ? "Pasted text" : r.filename;
@@ -471,7 +474,7 @@ function runRow(r) {
   return `<li><button type="button" data-id="${r.id}" class="row${r.id === runs.current ? " current" : ""}">
     <span class="when">${esc(when(r.created_at))}</span>
     <span class="what">${esc(name)}<small>${esc(sub || "")}</small></span>
-    <span class="model">${esc(r.model || r.provider || "")}</span>${score}</button>`
+    <span class="model">${esc(modelName(r.model) || r.provider || "")}</span>${score}</button>`
     + (ADMIN ? `<button type="button" class="btn del" data-del="${r.id}" aria-label="Delete this run">Delete</button>` : "")
     + "</li>";
 }
@@ -550,7 +553,7 @@ async function openRun(id) {
   const from = $("fromHistory");
   from.hidden = false;
   from.innerHTML = `<b>From history</b><span>${esc(when(run.created_at))}</span>`
-    + (run.model ? `<span>${esc(run.model)}</span>` : "")
+    + (run.model ? `<span>${esc(modelName(run.model))}</span>` : "")
     + (run.duration_ms != null ? `<span>${(run.duration_ms / 1000).toFixed(1)} s</span>` : "")
     + (run.has_document ? "" : "<span>The document itself wasn't stored (over 20 MB).</span>");
   $("workspace").hidden = false;
@@ -661,11 +664,13 @@ async function extractWithProgress(fd) {
 }
 
 // ---------- extraction ----------
-// GPT-6 Luna first (the default), then the free OpenRouter model. If the list can't load, or no menu
-// model has a key, the menu stays empty and the server picks whichever provider is configured.
+// GPT-6 Luna first (the default), then NVIDIA Nemotron, shown by model name. If the list can't load, or no
+// menu model has a key, the menu stays empty and the server picks whichever provider is configured.
 fetch("/api/providers").then((r) => r.ok ? r.json() : []).then((list) => {
+  for (const p of list) MODEL_NAMES[p.default_model] = p.label;
+  if (runs.list.length) renderRuns();   // History may have drawn raw model ids before the names arrived
   for (const p of list.filter((p) => p.in_menu && p.available)) {
-    $("provider").insertAdjacentHTML("beforeend", `<option value="${esc(p.id)}">${esc(p.label)} · ${esc(p.default_model)}</option>`);
+    $("provider").insertAdjacentHTML("beforeend", `<option value="${esc(p.id)}">${esc(p.label)}</option>`);
   }
   $("provider").closest(".model-pick").hidden = !$("provider").options.length;
 }).catch(() => {});
