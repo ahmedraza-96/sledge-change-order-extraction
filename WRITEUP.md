@@ -66,26 +66,42 @@ a screenshot, a fax, a multi-page scan and 3 documents the system had never seen
 
 The billing numbers (change order amount, contract sums) were right on every sample for both models.
 
-**The honest weak spot:** some errors still get a high score. Luna's mistakes come with real quotes, so
-every check passes. Two kinds cause most of them:
+**The honest weak spot:** some errors still get a high score, mostly the first three failure modes below.
 
-- **A value worked out, not read.** On forms with no subtotal line, the model adds up the line items
-  itself. The number is arithmetically right, but the document never states it. This is half of all
-  the errors.
-- **The right text in the wrong field**, mostly on emails: the owner taken from an email address, or
-  "not signed" on an email that has no signature block.
+## Failure modes
 
-## What else can go wrong, and what handles it
+Each row says what goes wrong, what catches it, and what can still slip through. The first five were
+found while testing; the rest are designed for.
 
-| Problem | What handles it |
-|---|---|
-| Change order amount confused with the new contract sum | Clear field instructions, the contract-sum math check, the pattern-matcher |
-| A credit's minus sign lost, e.g. "($3,200)" | Parsed in code, not by the model; a rule checks the sign |
-| A misread digit | The value must appear in its own quote; the math checks; the re-read |
-| Photos and scans (no text to check quotes against) | The verifier can see the page images; scores are lowered so these lean toward review |
-| The document's own math is wrong | Checks fail, the re-read confirms, the printed values are kept and flagged |
-| Not a change order at all (an invoice) | Detected, and every field is set to 0 so nothing looks trustworthy |
-| Text in the document trying to give the AI instructions | The document is marked as data, the output format is fixed, and numbers are re-checked against the source |
+**Found in testing**
+
+| Failure | What catches it | What can still slip through |
+|---|---|---|
+| **A value worked out, not read.** On a form with no subtotal line, the model adds up the line items and fills in a subtotal | The value must appear in its own quote, or the field is capped at 0.3 | Half of all errors in testing. If the quote happens to contain the same number (the total), it looks backed up; the verifier also says "yes", because the sum is right |
+| **The right text in the wrong field.** On the email: the owner taken from an email address, "not signed" on an email with no signature block | Field instructions; the verifier is asked about each field by name | The quote is real, so the evidence check passes |
+| **Confident mistakes.** Luna's errors come with real quotes | The math checks, the verifier | Luna's 4 errors on the samples scored 0.92-0.96, among its correct fields. No review line catches them without reviewing about half of all fields |
+| **A blank that should have a value.** A phone photo's "+5 days" left empty | The verifier is asked "the document does not state the change in contract time" | Before the verifier, a blank had nothing to check against and scored 0.95 |
+| **Verifier false alarms.** The second model says "no" to a correct value | Its answer is only 35% of the score, so a weak "no" lowers a field without sending it to review | In testing, 8 of its 9 "no" answers were wrong. It is a useful second opinion, not a judge |
+
+**Designed for**
+
+| Failure | What catches it | What can still slip through |
+|---|---|---|
+| Change order amount confused with the new contract sum | Field instructions, the contract-sum math check, the pattern-matcher | Forms that don't label the sums |
+| A credit's minus sign lost, e.g. "($3,200)" | Parsed in code, not by the model; a rule checks the sign | A credit described only in words |
+| A misread digit | The value must appear in its own quote; the math checks; the re-read | A field no rule touches (e.g. the project number), if the quote has the same misread |
+| An invented value for a missing field | "Blank, never guess" instruction; the quote must appear in the document | A believable value with a believable quote on a scan |
+| Photos and scans (no text to check quotes against) | The model and the verifier both see the page images; scores are lowered | Photo fields sit near 0.84, so a review line above 0.80 would send almost every photo to a person |
+| Handwritten changes and strike-throughs | The model sees the image; the latest edit wins; noted in `notes` | Unclear markups. These should go to a person |
+| Old numbers in an email thread | The quoted reply chain is removed | Forwarded threads without quote markers |
+| The document's own math is wrong | Checks fail, the re-read confirms, the printed values are kept and flagged | Nothing: flagging it is the right outcome |
+| Not a change order at all (an invoice) | Detected; every field is set to 0 and the re-read is skipped | A quote or proposal written like a change order |
+| A real change order judged "not a change order" (seen live) | Overruled when page 1 shows a matching change-order number and the math passes | On a scan with no text, the model's verdict stands |
+| Several change orders in one file | Counted; the document score is capped at 0.5 | Only the first one is extracted |
+| A table continued onto the next page | Continued rows are asked for; line items must add up to the subtotal | Repeated header rows read as items |
+| Text in the document trying to instruct the AI | Marked as data; fixed output format; numbers re-checked against the source | Can't be fully ruled out; nothing acts on the model's output automatically |
+| A model is down or out of credit | The other model is one click away in the menu; the failed run is saved in History | No automatic switch to the other model yet |
+| Scores tuned on few documents | The review line is picked by a test and checked on documents it wasn't picked from | 20 documents is too few; the weights and the line should be refit on real reviewed documents |
 
 ## Decisions worth noting
 
