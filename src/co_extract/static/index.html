@@ -504,6 +504,8 @@ $("historyMore").onclick = () => loadRuns(true);
 // Admin mode: open the page as /#admin to get Delete buttons. Deleting also needs the server's
 // HISTORY_ADMIN_KEY, so finding the buttons isn't enough on its own.
 const ADMIN = location.hash === "#admin";
+// Typing #admin onto an open page changes only the hash, which doesn't reload it; reload so it takes effect.
+window.addEventListener("hashchange", () => { if ((location.hash === "#admin") !== ADMIN) location.reload(); });
 const KEY_STORE = "co-extract-admin-key";
 if (ADMIN) {
   $("adminKeyRow").hidden = false;
